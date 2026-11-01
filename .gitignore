@@ -1,0 +1,6 @@
+# Logs & runtime
+logs/*.log
+*.log
+__pycache__/
+*.pyc
+.DS_Store

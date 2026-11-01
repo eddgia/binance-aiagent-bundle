@@ -1,0 +1,29 @@
+{
+  "rpc_url": "https://bsc-dataseed.binance.org",
+  "binance_chain_id": "56",
+  "wallet_address": "0x0C1D734cA7cD3Ae50A03D18a6913cD5Ee6A285d7",
+  "agent_handle": "dop",
+  "baw_path": "auto",
+  "safety": {
+    "allow_token_approvals": false,
+    "max_value_wei": "0",
+    "min_bnb_gas_floor": 0.0015
+  },
+  "sniper": {
+    "required_consensus": 11,
+    "consensus_window_sec": 3600,
+    "fast_watch_duration_sec": 2700,
+    "filter_smart_wallets_file": "data/smart_wallets_list.json",
+    "auto_dump_to_token": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "auto_dump_slippage": 10
+  },
+  "sentinel": {
+    "poll_interval_seconds": 120,
+    "pancake_factory_v2": "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73",
+    "wbnb_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+    "usdt_address": "0x55d398326f99059fF775485246999027B3197955",
+    "hash21_pool": "0x6884D40B10c55A6c2faB2D3c829d41c3C798279D",
+    "iao_offering": "0xa2556377118dD333F9f09600DE0bBCf54Cbc69A0",
+    "fagent_vault": "0x773d4E6b70176D2cf41938F8FE6d7c7136015Bf8"
+  }
+}
