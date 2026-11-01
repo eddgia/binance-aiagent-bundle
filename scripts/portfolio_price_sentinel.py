@@ -47,6 +47,7 @@ IAO_TOKEN = "0x0810c5eb5d86d1B8D408F75Bd1f5ABeFb6d79999"
 IAO_OFFERING = "0xa2556377118dD333F9f09600DE0bBCf54Cbc69A0"
 FAGENT_CARD = "0xD87ADb2E47979d6cb323896B1A9320E0dd132213"
 FAGENT_VAULT = "0x773d4E6b70176D2cf41938F8FE6d7c7136015Bf8"
+FIREBEARER_TOKEN = "0x8b47354E7b76B1970a0D06365c8244a810d37493"
 
 LOG_FILE = os.path.join(LOGS_DIR, "portfolio_sentinel.log")
 
@@ -186,10 +187,30 @@ def check_fagent_vault():
     round4_progress = max(0, min(100.0, (curr_card - 28500) / 9500 * 100)) if curr_card >= 28500 else 0
     log(f"[FAGENT VAULT] Card #{curr_card:,} | R4 Progress: {round4_progress:.1f}% | Vault Pool: {vault_bnb:,.2f} BNB (~Target #38,000)")
 
+def check_firebearer(wbnb_usd):
+    try:
+        pad_wallet = USER_WALLET[2:].lower().rjust(64, '0')
+        bal_res = eth_call(FIREBEARER_TOKEN, get_sel("balanceOf(address)") + pad_wallet)
+        bal = int(bal_res, 16) / 1e18 if bal_res and bal_res != "0x" else 0.0
+        minted_res = eth_call(FIREBEARER_TOKEN, get_sel("freeMinted()"))
+        minted = int(minted_res, 16) if minted_res and minted_res != "0x" else 0
+        pair_res = eth_call(FIREBEARER_TOKEN, get_sel("pancakePair()"))
+        pair = ("0x" + pair_res[-40:]) if pair_res and pair_res != "0x" and len(pair_res) >= 66 else None
+        liq_res = eth_call(FIREBEARER_TOKEN, get_sel("liquidityAdded()"))
+        liq_added = bool(int(liq_res, 16)) if liq_res and liq_res != "0x" else False
+        
+        status_lp = f"Minting {minted}/1,000 (No LP yet)"
+        if liq_added and pair and pair != "0x0000000000000000000000000000000000000000":
+            r0, r1 = get_reserves(pair)
+            status_lp = f"LP Active ({pair[:10]}...)"
+        log(f"[FIREBEARER] Balance: {bal:,.0f} 传火人 | Minted: {minted}/1,000 | Status: {status_lp}")
+    except Exception as e:
+        pass
+
 def run_sentinel():
     log("🛰️ Binance AI Agent Portfolio & Price Sentinel v2.2 active!")
     log(f"   • Wallet: {USER_WALLET}")
-    log(f"   • Protocols: Hash21, Altar, FAGENT PoA Vault, Ptah IAO Offering")
+    log(f"   • Protocols: Hash21, Altar, FAGENT PoA Vault, Ptah IAO, Firebearer")
     log(f"   • Background Watchdog: ApprovalsWatchdog (scans for compromised spenders every 10m)")
 
     last_watchdog = 0
@@ -200,6 +221,7 @@ def run_sentinel():
             check_hash21(wbnb_usd)
             check_fagent_vault()
             check_iao(wbnb_usd)
+            check_firebearer(wbnb_usd)
 
             # Approvals Watchdog every 10 minutes
             if time.time() - last_watchdog > 600:
