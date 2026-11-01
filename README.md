@@ -47,6 +47,9 @@ binance-aiagent-bundle/
 │   ├── twitter_alpha_sentinel.py   # Daemon quét tweet alpha
 │   ├── ptah_iao_manager.py         # Kịch bản kiểm tra tiến độ IAO & airdrop
 │   ├── market_order_swapper.py     # Công cụ swap nhanh token trên PancakeSwap qua BAW
+│   ├── solve_agentic_pixels.py     # Giải toán PoW on-chain Agentic Pixels & kiểm tra $AGENT
+│   ├── veil_sentinel.py            # Giám sát unpause Robinhood Chain (4663) & Veil ZK Router
+│   ├── fist_agent_manager.py       # Kiểm định Agent ID allocation FISTAGENT & cảnh báo chênh lệch giá
 │   ├── contract_interactor.py      # Công cụ mô phỏng & gọi contract an toàn
 │   └── wallet_portfolio_scanner.py # Công cụ kiểm kê số dư & tài sản on-chain
 └── references/                     # 17 tài liệu tra cứu lệnh BAW chi tiết
