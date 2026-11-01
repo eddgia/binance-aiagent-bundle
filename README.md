@@ -14,15 +14,21 @@ Trọn bộ công cụ tự động hóa & mã nguồn cho **Binance Agentic Wal
    - Quét pool PancakeSwap V2 liên tục mỗi **4 giây** cho toàn bộ token mới mint.
    - Khi phát hiện thanh khoản, lập tức xả sạch 100% token trực tiếp ra **BNB** (`0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`) để tái nạp phí gas cho ví!
 
-3. **Lá Chắn Bảo Vệ Gas (Gas Floor Shield)**:
+3. **4 Lớp Kiểm Soát Rủi Ro & Chống Đốt Ví Chuyên Sâu (v3.3)**:
+   - **Daily spend cap (0.01 BNB/ngày)**: Mỗi lần mint tốn gas, bot cộng dồn từ receipt thật on-chain. Đủ 0.01 BNB là dừng hết ngày hôm đó, qua 0h UTC reset. Chống bot đốt sạch ví khi gặp chuỗi kèo lỗi.
+   - **Mass-deployer skip (≥10 deploy/24h)**: Trước khi mint, bot tìm deployer của contract bằng binary-search block tạo + cache. Quét số contract deployer đó tạo trong 24h qua -- nếu ≥10 thì skip. Deployer spam hàng loạt thường là scam hoặc NFT rác.
+   - **Junk-NFT check (tokenURI)**: Gọi tokenURI của NFT sắp mint -- nếu trả về rỗng, lỗi, hoặc metadata fake thì skip vĩnh viễn, không thử lại. Tránh mint NFT không có hình/nội dung thật.
+   - **Fail limit (2 lần/contract/ngày)**: Mỗi contract fail 2 lần (mint lỗi, preview reject, hoặc bị drainer guard chặn) thì bot dừng thử contract đó trong ngày. State lưu ở `logs/risk_state.json`, tự reset mỗi ngày.
+
+4. **Lá Chắn Bảo Vệ Gas (Gas Floor Shield)**:
    - Ngưỡng an toàn tối thiểu: `0.0015 BNB`. Nếu số dư ví tụt dưới ngưỡng này, hệ thống tự động ngừng mint mới.
 
-4. **Theo Dõi Danh Mục Đầu Tư Toàn Diện (Portfolio Sentinel v2.0)**:
+5. **Theo Dõi Danh Mục Đầu Tư Toàn Diện (Portfolio Sentinel v2.0)**:
    - **FAGENT PoA Vault**: Giám sát tiến độ mở thẻ (#36,200+ / 38,000) và quỹ cổ tức Round 4 (hiện đạt 35+ BNB).
    - **Ptah Trade IAO**: Theo dõi hợp đồng huy động 424 BNB và đếm ngược giờ lập pool PancakeSwap.
    - **Hash21**: Giám sát phần thưởng $HASH, giá trị USD và thanh khoản pool.
 
-5. **Theo Dõi Alpha Từ KOL Trên X (Twitter Alpha Sentinel)**:
+6. **Theo Dõi Alpha Từ KOL Trên X (Twitter Alpha Sentinel)**:
    - Giám sát các tweet từ KOL hàng đầu (AKAKAY04, nancy_c813, erjie22...) để phát hiện sớm các đợt phát hành contract mới.
 
 ---
