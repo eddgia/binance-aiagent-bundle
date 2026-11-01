@@ -60,17 +60,13 @@ def check_iao_status(wallet=USER_WALLET):
     print("       PTAH TRADE - INITIAL AGENT OFFERING (IAO) AUDIT")
     print("=" * 60)
     
-    # 1. Offering Contract Info
-    # totalDeposited -> 0x40023408
     tot_res = eth_call(IAO_OFFERING, "0x40023408")
     total_bnb = int(tot_res, 16) / 1e18 if tot_res and tot_res != "0x" else 0.0
     
-    # end() -> 0xefbe1c1c
     end_res = eth_call(IAO_OFFERING, "0xefbe1c1c")
     end_ts = int(end_res, 16) if end_res and end_res != "0x" else 0
     rem_sec = max(0, int(end_ts - time.time()))
     
-    # closed() -> 0x6bb0473a
     closed_res = eth_call(IAO_OFFERING, "0x6bb0473a")
     is_closed = int(closed_res, 16) if closed_res and closed_res != "0x" else 0
     
@@ -80,17 +76,13 @@ def check_iao_status(wallet=USER_WALLET):
     print(f"Offering Closed:    {'YES' if is_closed else 'NO (Still Open)'}")
     print("-" * 60)
     
-    # 2. Wallet Status
     padded_wallet = wallet[2:].lower().rjust(64, '0')
-    # isRegistered(address) -> 0xc3c5a547
     reg_res = eth_call(IAO_OFFERING, "0xc3c5a547" + padded_wallet)
     is_reg = int(reg_res, 16) if reg_res and reg_res != "0x" else 0
     
-    # airdropClaimed(address) -> 0xd1b6dd30
     claimed_res = eth_call(IAO_OFFERING, "0xd1b6dd30" + padded_wallet)
     is_claimed = int(claimed_res, 16) if claimed_res and claimed_res != "0x" else 0
     
-    # Token balance -> 0x70a08231
     bal_res = eth_call(IAO_TOKEN, "0x70a08231" + padded_wallet)
     bal_iao = int(bal_res, 16) / 1e18 if bal_res and bal_res != "0x" else 0.0
     
@@ -100,7 +92,6 @@ def check_iao_status(wallet=USER_WALLET):
     print(f"IAO Wallet Balance: {bal_iao:,.2f} IAO")
     print("-" * 60)
     
-    # 3. PancakeSwap Pairs
     def get_pair(t0, t1):
         p0 = t0[2:].lower().rjust(64, '0')
         p1 = t1[2:].lower().rjust(64, '0')
@@ -118,16 +109,34 @@ def check_iao_status(wallet=USER_WALLET):
     print("=" * 60)
 
 def claim_airdrop():
-    print(f"Calling claimAirdrop() via BAW for {USER_WALLET}...")
-    cmd = [
-        BAW_CMD, "contract", "call",
+    print(f"Simulating claimAirdrop() for {USER_WALLET}...")
+    preview_cmd = [
+        BAW_CMD, "contract-call", "preview",
         "--binanceChainId", CHAIN_ID,
-        "--contractAddress", IAO_OFFERING,
-        "--calldata", "0x5b88349d",
+        "--from", USER_WALLET,
+        "--to", IAO_OFFERING,
+        "--value", "0",
+        "--inputData", "0x5b88349d",
         "--json"
     ]
-    res = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-    print(res.stdout)
+    res = subprocess.run(preview_cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15)
+    try:
+        data = json.loads(res.stdout)
+        if not data.get("success"):
+            print("❌ Preview failed:", data.get("error") or data.get("message"))
+            return
+        req_id = data.get("data", {}).get("requestId")
+        print(f"✅ Preview clean! RequestId: {req_id}. Executing claim...")
+        exec_cmd = [
+            BAW_CMD, "contract-call", "execute",
+            "--binanceChainId", CHAIN_ID,
+            "--requestId", req_id,
+            "--json"
+        ]
+        exec_res = subprocess.run(exec_cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25)
+        print("Execution result:", exec_res.stdout)
+    except Exception as e:
+        print("Claim exception:", e)
 
 if __name__ == "__main__":
     wallet = sys.argv[1] if len(sys.argv) > 1 else USER_WALLET
