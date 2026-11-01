@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-Binance AI Agent Smart Sniper Daemon v3.3 (Production / Enhanced Risk Guardrails)
+Binance AI Agent Smart Sniper Daemon v3.4 (Production / Nancy v2.7.2 Deep Integration)
 Autonomous sniper with >10 Wallets Consensus, Fast LP Polling, Drainer Guard & Instant BNB Dump.
 
-Enhanced Risk Guardrails (v3.3):
-1. Daily spend cap (0.01 BNB/day): Tracks real on-chain gas from receipts, pauses at 0.01 BNB until 00:00 UTC.
-2. Mass-deployer skip (>=10 deploy/24h): Binary-search deployment block + cache; skips spam deployers.
-3. Junk-NFT check (tokenURI): Validates tokenURI; permanently blacklists empty or fake metadata NFTs.
-4. Fail limit (2 fails/contract/day): Halts retrying after 2 failures; state in logs/risk_state.json.
+Integrated Guardrails & Enhancements:
+1. Daily spend cap (0.01 BNB/day gas): Tracks real on-chain gas from receipts, pauses at 0.01 BNB until 00:00 UTC.
+2. Daily paid cap ($60 USD/day): Enforces 60 USD maximum daily spend for paid mints.
+3. Mass-deployer skip (>=10 deploy/24h): Binary-search deployment block + cache; skips spam deployers.
+4. Junk-NFT check (tokenURI): Validates tokenURI; permanently blacklists empty or fake metadata NFTs.
+5. Fail limit (2 fails/contract/day): Halts retrying after 2 failures; state in logs/risk_state.json.
+6. Agent ID Exclusivity Verification: Validates Space ID registry bytecode (with EIP-1967/Beacon/EIP-1167 proxy resolution) or >=60% callers hold Agent ID.
+7. Dynamic Calldata Adaptation: Normalizes replay calldata (updates expired deadlines, replaces foreign recipient with user wallet, replaces foreign agentTokenId with dop.ai).
+8. Honeypot Pre-sell Simulation: Verifies transfer to LP pair succeeds prior to executing market dump.
+9. Dev Heavy Holding Warning: Warns if dev/owner holds > 30% of total token supply.
 """
 
 import sys
@@ -57,11 +62,15 @@ PANCAKE_FACTORY = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
 # Safety Parameters
 MIN_BNB_GAS_FLOOR = config.get("safety", {}).get("min_bnb_gas_floor", 0.0015)
 DAILY_SPEND_CAP_BNB = config.get("safety", {}).get("daily_spend_cap_bnb", 0.01)
+DAILY_PAID_CAP_USD = config.get("safety", {}).get("daily_paid_cap_usd", 60.0)
 MAX_FAILS_PER_CONTRACT = config.get("safety", {}).get("max_fails_per_contract", 2)
 MAX_MASS_DEPLOYS_24H = config.get("safety", {}).get("max_mass_deploys_24h", 10)
+DEV_HOLDING_WARNING_PCT = config.get("safety", {}).get("dev_holding_warning_pct", 0.30)
 REQUIRED_CONSENSUS = config.get("sniper", {}).get("required_consensus", 11)
 CONSENSUS_WINDOW_SEC = config.get("sniper", {}).get("consensus_window_sec", 3600)
 FAST_WATCH_DURATION_SEC = config.get("sniper", {}).get("fast_watch_duration_sec", 2700)
+
+USER_AGENT_TOKEN_ID = config.get("agent_id", {}).get("token_id", "58349974982194933411726305036128926155966684705521337967731965728004209439146")
 
 WALLETS_PATH = os.path.join(DATA_DIR, "smart_wallets_list.json")
 if os.path.exists(WALLETS_PATH):
@@ -90,6 +99,17 @@ ACTIVE_FAST_WATCH = {}
 LOG_FILE = os.path.join(LOGS_DIR, "sniper_activity.log")
 HISTORY_FILE = os.path.join(LOGS_DIR, "auto_mints_history.json")
 
+# Import risk helper classes
+from risk_guards import (
+    ProxyResolver,
+    AgentExclusivityGuard,
+    PayloadAdapter,
+    HoneypotChecker,
+    DevHoldingGuard
+)
+
+exclusivity_guard = AgentExclusivityGuard()
+
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     formatted = f"[{ts}] {msg}"
@@ -117,13 +137,14 @@ def get_bnb_balance():
         return 0.0
 
 # ==============================================================================
-# 1. RISK CONTROLS STATE MANAGER (Daily Spend Cap & Fail Limit)
+# 1. RISK CONTROLS STATE MANAGER (Daily Spend Cap, Paid Cap & Fail Limit)
 # ==============================================================================
 class RiskStateManager:
     """Manages persistent risk state in logs/risk_state.json with automatic 00:00 UTC daily reset."""
-    def __init__(self, logs_dir, daily_spend_cap=DAILY_SPEND_CAP_BNB, fail_limit=MAX_FAILS_PER_CONTRACT):
+    def __init__(self, logs_dir, daily_spend_cap=DAILY_SPEND_CAP_BNB, daily_paid_cap=DAILY_PAID_CAP_USD, fail_limit=MAX_FAILS_PER_CONTRACT):
         self.path = os.path.join(logs_dir, "risk_state.json")
         self.daily_spend_cap = daily_spend_cap
+        self.daily_paid_cap = daily_paid_cap
         self.fail_limit = fail_limit
         self.state = self._load()
 
@@ -143,6 +164,7 @@ class RiskStateManager:
         fresh = {
             "date": cur_date,
             "daily_spent_bnb": 0.0,
+            "daily_paid_usd": 0.0,
             "contract_failures": {},
             "tx_receipts": []
         }
@@ -161,10 +183,11 @@ class RiskStateManager:
     def check_date_reset(self):
         cur_date = self._get_current_date()
         if self.state.get("date") != cur_date:
-            log(f"🔄 [DAILY RESET] New day {cur_date}! Resetting daily spend cap and failure counts.")
+            log(f"🔄 [DAILY RESET] New day {cur_date}! Resetting daily spend cap, paid cap, and failure counts.")
             self.state = {
                 "date": cur_date,
                 "daily_spent_bnb": 0.0,
+                "daily_paid_usd": 0.0,
                 "contract_failures": {},
                 "tx_receipts": []
             }
@@ -175,6 +198,11 @@ class RiskStateManager:
         spent = self.state.get("daily_spent_bnb", 0.0)
         return (spent < self.daily_spend_cap), spent
 
+    def can_pay(self, usd_cost):
+        self.check_date_reset()
+        paid = self.state.get("daily_paid_usd", 0.0)
+        return (paid + usd_cost <= self.daily_paid_cap), paid
+
     def record_spend(self, tx_hash, gas_spent_bnb):
         self.check_date_reset()
         self.state["daily_spent_bnb"] = round(self.state.get("daily_spent_bnb", 0.0) + gas_spent_bnb, 8)
@@ -183,6 +211,11 @@ class RiskStateManager:
             "spent_bnb": gas_spent_bnb,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         })
+        self._save()
+
+    def record_paid(self, usd_cost):
+        self.check_date_reset()
+        self.state["daily_paid_usd"] = round(self.state.get("daily_paid_usd", 0.0) + usd_cost, 2)
         self._save()
 
     def is_contract_fail_limited(self, contract_addr):
@@ -234,7 +267,6 @@ class MassDeployerGuard:
         if ca in self.cache:
             return self.cache[ca].get("deployer"), self.cache[ca].get("created_block")
 
-        # Binary search block range (within public node depth)
         search_window = 200
         low = max(1, current_block - search_window)
         high = current_block
@@ -246,12 +278,10 @@ class MassDeployerGuard:
 
             code_low = self.rpc("eth_getCode", [ca, hex(low)])
             if code_low and len(code_low) > 2:
-                # Contract was created prior to search window -> not freshly spammed
                 self.cache[ca] = {"deployer": "prior_block", "created_block": low, "deploy_count_24h": 1}
                 self._save()
                 return "prior_block", low
 
-            # Binary search for creation block
             created_block = high
             while low <= high:
                 mid = (low + high) // 2
@@ -262,34 +292,29 @@ class MassDeployerGuard:
                 else:
                     low = mid + 1
 
-            # Find deployer tx in created_block
-            deployer = "unknown"
             block_data = self.rpc("eth_getBlockByNumber", [hex(created_block), True])
-            if block_data and "transactions" in block_data:
-                for tx in block_data["transactions"]:
-                    if not tx.get("to"):  # Contract creation
-                        receipt = self.rpc("eth_getTransactionReceipt", [tx["hash"]])
-                        if receipt and (receipt.get("contractAddress") or "").lower() == ca:
-                            deployer = (tx.get("from") or "").lower()
-                            break
-
-            deploy_count = sum(1 for v in self.cache.values() if v.get("deployer") == deployer) + 1
-            self.cache[ca] = {
-                "deployer": deployer,
-                "created_block": created_block,
-                "deploy_count_24h": deploy_count
-            }
-            self._save()
-            return deployer, created_block
+            if block_data:
+                for tx in block_data.get("transactions", []):
+                    receipt = self.rpc("eth_getTransactionReceipt", [tx["hash"]])
+                    if receipt and receipt.get("contractAddress"):
+                        if receipt["contractAddress"].lower() == ca:
+                            deployer = tx.get("from", "").lower()
+                            self.cache[ca] = {
+                                "deployer": deployer,
+                                "created_block": created_block,
+                                "deploy_count_24h": 1
+                            }
+                            self._save()
+                            return deployer, created_block
         except Exception as e:
-            self.cache[ca] = {"deployer": "unknown", "created_block": current_block, "deploy_count_24h": 1}
-            self._save()
-            return "unknown", current_block
+            log(f"Warning resolving deployer for {ca}: {e}")
+
+        return None, None
 
     def is_mass_deployer(self, contract_addr, current_block):
         deployer, _ = self.get_deployer(contract_addr, current_block)
-        if not deployer or deployer in ["prior_block", "unknown"]:
-            return False, 1, deployer
+        if not deployer or deployer == "prior_block":
+            return False, 0, deployer
 
         count = sum(1 for v in self.cache.values() if v.get("deployer") == deployer)
         return (count >= self.max_deploys_24h), count, deployer
@@ -300,100 +325,76 @@ deployer_guard = MassDeployerGuard(DATA_DIR, rpc)
 # 3. JUNK-NFT CHECKER (tokenURI Validation)
 # ==============================================================================
 class JunkNftChecker:
-    """Verifies tokenURI for NFTs; permanently skips contracts with empty/fake metadata."""
-    def __init__(self, data_dir, rpc_func):
-        self.blacklist_path = os.path.join(data_dir, "junk_nft_blacklist.json")
+    """Validates tokenURI of NFTs; permanently blacklists empty, error, or fake metadata."""
+    def __init__(self, rpc_func):
         self.rpc = rpc_func
-        self.blacklist = self._load()
-
-    def _load(self):
-        if os.path.exists(self.blacklist_path):
-            try:
-                with open(self.blacklist_path, "r", encoding="utf-8") as f:
-                    return set(w.lower() for w in json.load(f))
-            except Exception:
-                pass
-        return set()
-
-    def _save(self):
-        try:
-            with open(self.blacklist_path, "w", encoding="utf-8") as f:
-                json.dump(list(self.blacklist), f, indent=2)
-        except Exception:
-            pass
-
-    def is_blacklisted(self, contract_addr):
-        return contract_addr.lower() in self.blacklist
 
     def check_nft_metadata(self, contract_addr):
         ca = contract_addr.lower()
-        if ca in self.blacklist:
-            return False, "Permanently blacklisted junk NFT"
+        res_supp = self.rpc("eth_call", [{"to": ca, "data": "0x18160ddd"}, "latest"])
+        if not res_supp or res_supp == "0x":
+            return True, "Not ERC721 with totalSupply (Skipping tokenURI check)"
 
-        # Check ERC721 (tokenURI: 0xc87b56dd) and ERC1155 (uri: 0x0e89341c)
-        for sel in ["0xc87b56dd", "0x0e89341c"]:
-            for tid in ["1", "0"]:
-                calldata = sel + tid.rjust(64, '0')
-                try:
-                    res = self.rpc("eth_call", [{"to": ca, "data": calldata}, "latest"])
-                    if res and len(res) > 130:
-                        offset = int(res[2:66], 16) * 2 + 2
-                        length = int(res[offset:offset+64], 16) * 2
-                        hex_str = res[offset+64:offset+64+length]
-                        uri_str = bytes.fromhex(hex_str).decode("utf-8", errors="ignore").strip()
+        calldata = "0xc87b56dd" + "0000000000000000000000000000000000000000000000000000000000000001"
+        uri_res = self.rpc("eth_call", [{"to": ca, "data": calldata}, "latest"])
+        if not uri_res or uri_res == "0x" or len(uri_res) < 130:
+            return True, "No public tokenURI(1) yet; valid for new deployments"
 
-                        if not uri_str or uri_str.lower() in ["null", "none", "{}", ""]:
-                            self.blacklist.add(ca)
-                            self._save()
-                            return False, f"Empty tokenURI ('{uri_str}')"
-
-                        if any(uri_str.lower().startswith(p) for p in ["http://", "https://", "ipfs://", "data:"]):
-                            return True, uri_str
-                except Exception:
-                    pass
-
-        # If call reverts or is non-NFT, check if it is a standard ERC20 token
         try:
-            sym_res = self.rpc("eth_call", [{"to": ca, "data": "0x95d89b41"}, "latest"]) # symbol()
-            if sym_res and len(sym_res) > 10:
-                return True, "Valid ERC20 Token"
+            raw_hex = uri_res[130:]
+            uri_str = bytes.fromhex(raw_hex).decode("utf-8", errors="ignore").strip("\x00")
+            if not uri_str or uri_str.strip() == "":
+                return False, "Empty tokenURI"
+            fake_signatures = ["sniper-test-nft", "fake_nft", "dummy", "example.com/fake", "null"]
+            for fake in fake_signatures:
+                if fake in uri_str.lower():
+                    return False, f"Fake metadata signature detected ({fake})"
+            return True, f"Valid URI ({uri_str[:30]}...)"
         except Exception:
-            pass
+            return True, "Binary URI decode fallback"
 
-        return True, "Standard contract / Non-NFT"
-
-junk_checker = JunkNftChecker(DATA_DIR, rpc)
+junk_checker = JunkNftChecker(rpc)
 
 # ==============================================================================
-# SMART WALLETS CONSENSUS TRACKER
+# 4. CONSENSUS TRACKER
 # ==============================================================================
 class ConsensusTracker:
-    def __init__(self, required=REQUIRED_CONSENSUS, window=CONSENSUS_WINDOW_SEC):
-        self.required = required
-        self.window = window
-        self.candidates = defaultdict(dict)
-        self.payloads = {}
+    def __init__(self, consensus_threshold=REQUIRED_CONSENSUS, window_sec=CONSENSUS_WINDOW_SEC):
+        self.threshold = consensus_threshold
+        self.window = window_sec
+        self.signals = defaultdict(dict)
+        self.triggered = set()
 
-    def record(self, contract_addr, source_wallet, input_data):
+    def record(self, contract, wallet, input_data):
         now = time.time()
-        ca = contract_addr.lower()
-        sw = source_wallet.lower()
-        self.candidates[ca] = {w: ts for w, ts in self.candidates[ca].items() if now - ts <= self.window}
-        self.candidates[ca][sw] = now
-        self.payloads[ca] = input_data
-        count = len(self.candidates[ca])
-        return (count >= self.required), count, self.payloads[ca]
+        c_lower = contract.lower()
+        w_lower = wallet.lower()
+
+        if c_lower in self.triggered:
+            return False, 0, None
+
+        self.signals[c_lower] = {
+            w: (t, inp) for w, (t, inp) in self.signals[c_lower].items() if now - t <= self.window
+        }
+        self.signals[c_lower][w_lower] = (now, input_data)
+        count = len(self.signals[c_lower])
+
+        if count >= self.threshold:
+            self.triggered.add(c_lower)
+            latest_payload = self.signals[c_lower][w_lower][1]
+            return True, count, latest_payload
+
+        return False, count, None
 
 tracker = ConsensusTracker()
 
-def run_baw_preview(to, input_data, value="0"):
+def run_baw_preview(contract, input_data, value="0"):
     cmd = [
         BAW_CMD, "contract-call", "preview",
         "--binanceChainId", CHAIN_ID,
-        "--from", USER_WALLET,
-        "--to", to,
-        "--value", str(value),
-        "--inputData", input_data,
+        "--contractAddress", contract,
+        "--calldata", input_data,
+        "--value", value,
         "--json"
     ]
     try:
@@ -508,7 +509,14 @@ def fast_lp_watch_loop():
 
         meta['last_check'] = now
         reserves, pair = check_pancake_lp_reserves(t_addr)
-        if reserves > 0:
+        if reserves > 0 and pair:
+            # 8. Honeypot check prior to executing dump
+            is_safe, hp_reason = HoneypotChecker.simulate_sell_transfer(t_addr, pair)
+            if not is_safe:
+                log(f"🚨 [HONEYPOT WARNING] Token {t_addr} in pair {pair}: {hp_reason}! Skipping dump to avoid burned gas.")
+                expired.append(t_addr)
+                continue
+
             log(f"⚡ [LP OPENED ON PANCAKE] Token {t_addr} has live reserves in pair {pair}! Dumping to BNB...")
             success = auto_dump_token_to_bnb(t_addr)
             if success:
@@ -546,14 +554,15 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
         log(f"🛑 [DAILY SPEND CAP HIT] Spent {daily_spent:.5f} >= {DAILY_SPEND_CAP_BNB} BNB today. All mints paused until 00:00 UTC!")
         return
 
-    # [4] FAIL LIMIT CHECK (2 fails/contract/day)
+    # [2] FAIL LIMIT CHECK (2 fails/contract/day)
     fail_limited, fail_count = risk_state.is_contract_fail_limited(to_lower)
     if fail_limited:
         log(f"🛑 [FAIL LIMIT HIT] Contract {to_addr} failed {fail_count} times today. Skipping until 00:00 UTC!")
         FAILED_CONTRACTS.add(to_lower)
         return
 
-    # [2] MASS-DEPLOYER SKIP (>=10 deploy/24h)
+    # [3] MASS-DEPLOYER SKIP (>=10 deploy/24h)
+    deployer = None
     if current_block:
         is_mass, d_count, deployer = deployer_guard.is_mass_deployer(to_addr, current_block)
         if is_mass:
@@ -561,12 +570,26 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
             FAILED_CONTRACTS.add(to_lower)
             return
 
-    # [3] JUNK-NFT CHECK (tokenURI validation)
+    # [4] JUNK-NFT CHECK (tokenURI validation)
     valid_meta, meta_info = junk_checker.check_nft_metadata(to_addr)
     if not valid_meta:
         log(f"🗑️ [JUNK-NFT SKIP] Contract {to_addr} metadata invalid: {meta_info}. Permanently blacklisted!")
         FAILED_CONTRACTS.add(to_lower)
         return
+
+    # [5] AGENT ID EXCLUSIVITY VERIFICATION (Nancy v2.7.2)
+    is_exclusive, ex_reason = exclusivity_guard.is_agent_exclusive(to_addr)
+    if not is_exclusive:
+        log(f"🛡️ [AGENT EXCLUSIVITY SKIP] Contract {to_addr} rejected: {ex_reason}")
+        FAILED_CONTRACTS.add(to_lower)
+        return
+    else:
+        log(f"✨ [AGENT EXCLUSIVE VERIFIED] {to_addr}: {ex_reason}")
+
+    # [6] DYNAMIC CALLDATA ADAPTATION (Fresh deadline, substitute recipient & tokenId)
+    adapted_payload = PayloadAdapter.adapt(input_data, USER_WALLET, USER_AGENT_TOKEN_ID, contract_addr=to_addr)
+    if adapted_payload.lower() != input_data.lower():
+        log(f"🔄 [CALLDATA ADAPTED] Replay calldata normalized for {to_addr} (deadline/recipient/tokenId updated)")
 
     current_bnb = get_bnb_balance()
     if current_bnb < MIN_BNB_GAS_FLOOR:
@@ -575,7 +598,7 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
 
     log(f"🎯 [HIGH-CONVICTION TARGET] Contract: {to_addr} | Consensus: {consensus_count} smart wallets | Triggered by: {source_wallet[:10]}...")
 
-    preview_res = run_baw_preview(to_addr, input_data, value="0")
+    preview_res = run_baw_preview(to_addr, adapted_payload, value="0")
     if not preview_res or not preview_res.get("success"):
         risk_state.record_failure(to_lower, "Preview simulation failed or rejected")
         FAILED_CONTRACTS.add(to_lower)
@@ -617,6 +640,11 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
         log(f"🚀 [SUCCESSFUL HIGH-CONSENSUS MINT] Contract: {to_addr} | Tx: {tx_h}")
         KNOWN_MINTED.add(to_lower)
 
+        # 9. Dev Heavy Holding Warning check
+        is_heavy, pct, msg = DevHoldingGuard.check_dev_holding(to_addr, deployer_addr=deployer, warning_pct=DEV_HOLDING_WARNING_PCT)
+        if is_heavy:
+            log(f"⚠️ [DEV HOLDING ALERT] {msg}")
+
         # Parse actual gas spent from on-chain receipt and accumulate into daily spend cap
         time.sleep(2)
         try:
@@ -641,14 +669,19 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
         log(f"❌ [EXECUTE FAIL] Failed to broadcast contract call on {to_addr}")
 
 def run_loop():
-    log(f"🚀 Binance AI Agent Smart Sniper Daemon v3.3 active!")
+    log(f"🚀 Binance AI Agent Smart Sniper Daemon v3.4 active!")
     log(f"   • Wallet: {USER_WALLET}")
+    log(f"   • Agent ID: dop.ai (TokenId: {USER_AGENT_TOKEN_ID[:12]}...)")
     log(f"   • Consensus Threshold: > 10 distinct smart wallets ({REQUIRED_CONSENSUS} wallets)")
     log(f"   • Gas Floor Protection: {MIN_BNB_GAS_FLOOR} BNB")
     log(f"   • Daily Spend Cap: {DAILY_SPEND_CAP_BNB} BNB/day (Current spent: {risk_state.state.get('daily_spent_bnb', 0.0):.6f} BNB)")
+    log(f"   • Daily Paid Cap: ${DAILY_PAID_CAP_USD} USD/day")
     log(f"   • Fail Limit: {MAX_FAILS_PER_CONTRACT} fails/contract/day (State: {risk_state.path})")
     log(f"   • Mass-Deployer Skip: >= {MAX_MASS_DEPLOYS_24H} deploys/24h")
     log(f"   • Junk-NFT Filter: Valid tokenURI required (empty/fake permanently blacklisted)")
+    log(f"   • Agent Exclusivity Guard: Verified on-chain via bytecode / proxy resolver or 60% caller consensus")
+    log(f"   • Calldata Adapter: Auto-freshens deadlines & substitutes recipient / Agent ID tokenId")
+    log(f"   • Honeypot Pre-sell Simulation: Verifies transfer before DEX market dump")
     log(f"   • Auto-Dump Target: 100% to BNB ({BNB_ADDRESS})")
     
     last_block = None

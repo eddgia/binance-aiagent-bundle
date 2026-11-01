@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Binance AI Agent Portfolio & Price Sentinel v2.0
-Monitors active mining protocols (Hash21), dividend vaults (FAGENT PoA), IAO launch, and PancakeSwap pools.
+Binance AI Agent Portfolio & Price Sentinel v2.2 (Nancy v2.7.2 Approvals & Risk Integration)
+Monitors active mining protocols (Hash21), dividend vaults (FAGENT PoA), IAO launch, PancakeSwap pools,
+and runs background security watchdogs (ApprovalsWatchdog for compromised spenders).
 """
 
 import sys
@@ -48,6 +49,8 @@ FAGENT_CARD = "0xD87ADb2E47979d6cb323896B1A9320E0dd132213"
 FAGENT_VAULT = "0x773d4E6b70176D2cf41938F8FE6d7c7136015Bf8"
 
 LOG_FILE = os.path.join(LOGS_DIR, "portfolio_sentinel.log")
+
+from risk_guards import ApprovalsWatchdog
 
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -155,18 +158,17 @@ def check_hash21(wbnb_usd):
 
 def check_iao(wbnb_usd):
     pair = get_pancake_pair(IAO_TOKEN, WBNB)
-    pair_u = get_pancake_pair(IAO_TOKEN, USDT)
     total_dep_res = eth_call(IAO_OFFERING, get_sel("totalDeposited()"))
     total_bnb = 0.0
     if total_dep_res and total_dep_res != "0x":
         total_bnb = int(total_dep_res, 16) / 1e18
-    
+
     end_res = eth_call(IAO_OFFERING, get_sel("end()"))
     rem_min = 0
     if end_res and end_res != "0x":
         end_ts = int(end_res, 16)
         rem_min = max(0, int((end_ts - time.time()) / 60))
-        
+
     liq_str = "No Official Pool"
     if pair:
         r0, r1 = get_reserves(pair)
@@ -185,15 +187,30 @@ def check_fagent_vault():
     log(f"[FAGENT VAULT] Card #{curr_card:,} | R4 Progress: {round4_progress:.1f}% | Vault Pool: {vault_bnb:,.2f} BNB (~Target #38,000)")
 
 def run_sentinel():
-    log("🛰️ Binance AI Agent Portfolio & Price Sentinel v2.0 started!")
+    log("🛰️ Binance AI Agent Portfolio & Price Sentinel v2.2 active!")
     log(f"   • Wallet: {USER_WALLET}")
-    log(f"   • Monitoring: Hash21, Altar, FAGENT PoA Vault, Ptah IAO Offering")
+    log(f"   • Protocols: Hash21, Altar, FAGENT PoA Vault, Ptah IAO Offering")
+    log(f"   • Background Watchdog: ApprovalsWatchdog (scans for compromised spenders every 10m)")
+
+    last_watchdog = 0
+
     while True:
         try:
             wbnb_usd = get_wbnb_price_usd()
             check_hash21(wbnb_usd)
             check_fagent_vault()
             check_iao(wbnb_usd)
+
+            # Approvals Watchdog every 10 minutes
+            if time.time() - last_watchdog > 600:
+                last_watchdog = time.time()
+                revoked = ApprovalsWatchdog.scan_and_revoke()
+                if revoked:
+                    for r in revoked:
+                        log(f"🚨 [APPROVAL REVOKED] Revoked risky approval to {r['name']} ({r['spender']}) for token {r['token']}")
+                else:
+                    log("🛡️ [APPROVALS AUDIT] 0 suspicious authorizations found in wallet.")
+
         except Exception as e:
             log(f"[SENTINEL ERROR] {e}")
         time.sleep(120)

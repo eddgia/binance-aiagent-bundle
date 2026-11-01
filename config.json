@@ -3,11 +3,32 @@
   "binance_chain_id": "56",
   "wallet_address": "0x0C1D734cA7cD3Ae50A03D18a6913cD5Ee6A285d7",
   "agent_handle": "dop",
+  "agent_id": {
+    "domain": "dop.ai",
+    "token_id": "58349974982194933411726305036128926155966684705521337967731965728004209439146",
+    "registry": "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F"
+  },
   "baw_path": "auto",
   "safety": {
     "allow_token_approvals": false,
     "max_value_wei": "0",
-    "min_bnb_gas_floor": 0.0015
+    "min_bnb_gas_floor": 0.0015,
+    "daily_spend_cap_bnb": 0.01,
+    "daily_paid_cap_usd": 60.0,
+    "max_fails_per_contract": 2,
+    "max_mass_deploys_24h": 10,
+    "dev_holding_warning_pct": 0.30
+  },
+  "profit_taking": {
+    "back_x": 2.0,
+    "steps": [
+      [10.0, 0.30],
+      [20.0, 0.50]
+    ],
+    "crash_pct": 0.40,
+    "crash_after_back_pct": 0.60,
+    "moon_pct": 0.20,
+    "free_mint_trailing_crash": 0.50
   },
   "sniper": {
     "required_consensus": 11,

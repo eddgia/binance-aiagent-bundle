@@ -1,6 +1,6 @@
 {
   "date": "2026-11-01",
-  "daily_spent_bnb": 4.86e-06,
+  "daily_spent_bnb": 0.0,
   "contract_failures": {
     "0x15e47c22df42d94fa2f0ad078fec5bea6453d5cf": 1,
     "0x5c221475239decfb241cb3337257e76fdfae8945": 1,
@@ -12,15 +12,29 @@
     "0x55d398326f99059ff775485246999027b3197955": 1,
     "0x876920c456416309db8cb0805df6e35ead067be3": 1,
     "0x3e9b4f58e2bc9b064f002cf89531e12fc5cfa00f": 1,
-    "0xd96b5791f4e24b130efcc9979e9da85865b0c212": 1
+    "0xd96b5791f4e24b130efcc9979e9da85865b0c212": 1,
+    "0x316dbf6761c57053bc477c9e90c7920e0b87e13d": 1,
+    "0xfa5d494efbf77094caa7401c6e89bc00b52bce93": 1,
+    "0xdac1ef6131d9633879a7cc9c5f6d82db6cf7501f": 1,
+    "0xd43f328560ae9ba09b27375d1b83f7fa7a0d091b": 1,
+    "0xcc2064f0415f12ae2b9e7fc3637b4ed9254a9113": 1,
+    "0x0c876f2f7c44cde660ab77bd2022537a305e0220": 1,
+    "0x94aa6927ecb158d5f82b14287b4be32f9e307dc6": 1,
+    "0x424aa4c12f69702ebd69032856d7d75fc65f3161": 1,
+    "0x98bc0a9b403174a0a16df30e1143715655ccaa85": 1,
+    "0x63fe6c12de881a04d1799f2802089bb4062a9579": 1,
+    "0x8c613031d24e24008db5670395f95c5ff4e36fee": 1,
+    "0xaf7cd30f597fe2e26efdf29389e5d6be1cb63959": 1,
+    "0xa6839b3bc2483f8312466efa25ac8ccc8feb52da": 1,
+    "0x95ce945bef11643a8c7a97148b36f9a52c48d0f0": 1,
+    "0xc99bae3e2d91c7b194c569dd9ff6eb1344e5812b": 1,
+    "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c": 1,
+    "0x1458b0c132fb51bdc65b1ca7a3be484bcd9a2f77": 1,
+    "0xd0523ce816e2b404db5633d181572cded33d7fa9": 1,
+    "0x93081c35a24b4d77fab565d731e5593992c94d00": 1,
+    "0x23eac5149cb392154ef8b679c042cea466ad9de5": 1,
+    "0x68bb6b186b45c2101abf5bb820535aa65b3a467a": 1,
+    "0x3ea64578738a633c2315d64473b8cfd692f97777": 1
   },
-  "tx_receipts": [
-    {
-      "contract": "0x3E9B4F58e2bC9b064F002cF89531e12FC5CfA00f",
-      "name": "HIVE Pollen Share",
-      "tx": "0x5d5c67a37df4e068addfac34b77015c0df13a3d1d1b55917fd5b4eafe1904030",
-      "spent_bnb": 4.86e-06,
-      "timestamp": "2026-11-01 17:27:19"
-    }
-  ]
+  "tx_receipts": []
 }

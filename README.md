@@ -1,35 +1,41 @@
-# 🚀 Binance AI Agent & Smart Sniper Suite v3.2
+# 🚀 Binance AI Agent & Smart Sniper Suite v3.4
 
-Trọn bộ công cụ tự động hóa & mã nguồn cho **Binance Agentic Wallet (`baw`)** trên mạng **BNB Smart Chain (BSC)**, sẵn sàng để ném vào **Muse** hoặc chạy độc lập 24/7.
+Trọn bộ công cụ tự động hóa & mã nguồn cho **Binance Agentic Wallet (`baw`)** trên mạng **BNB Smart Chain (BSC)**, tích hợp toàn diện các chuẩn kiểm soát rủi ro từ **Nancy v2.7.2** và chạy độc lập 24/7.
 
 ---
 
-## 🌟 Điểm Mới Nổi Bật Trong Bản v3.2
+## 🌟 Điểm Mới Nổi Bật Trong Bản v3.4 (Nancy v2.7.2 Deep Integration)
 
-1. **Lọc Đồng Thuận Khắt Khe (> 10 Ví Smart Wallet)**:
-   - Chỉ kích hoạt mint khi có **trên 10 ví smart wallet độc lập** (`>= 11 ví`) cùng mint cùng một contract trong vòng 1 giờ.
-   - Loại bỏ 100% tình trạng bot spam mint rác vô thanh khoản làm hao hụt gas.
+1. **Xác Minh Độc Quyền Agent ID (Agent ID Exclusivity Guard)**:
+   - Tự động kiểm tra mã bytecode contract xem có liên kết hợp đồng Space ID Registry (`0x60B9...022F`) hay không.
+   - Hỗ trợ **phân giải Proxy (ProxyResolver)**: Tự động truy vết EIP-1967 Implementation slot, Beacon slot (`0x5c60da1b`), và EIP-1167 Minimal Proxy clone để không bỏ sót các hợp đồng ủy quyền như FAGENT hay bibiai.
+   - Nếu contract dùng xác minh chữ ký backend website: Phân tích 3,000 block gần nhất, **yêu cầu tối thiểu 60% số ví gọi contract phải sở hữu .ai Agent ID thật** mới kích hoạt. Loại bỏ triệt để các dự án memecoin mạo danh.
 
-2. **Cơ Chế Bắt Thanh Khoản & Auto-Dump Về BNB Siêu Tốc**:
-   - Quét pool PancakeSwap V2 liên tục mỗi **4 giây** cho toàn bộ token mới mint.
-   - Khi phát hiện thanh khoản, lập tức xả sạch 100% token trực tiếp ra **BNB** (`0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`) để tái nạp phí gas cho ví!
+2. **Tự Động Chuẩn Hóa & Thích Ứng Dữ Liệu Gọi (Dynamic Calldata Adapter)**:
+   - **Làm mới thời hạn (Fresh Deadline)**: Tự động phát hiện các tham số timestamp sắp hết hạn trong calldata và gia hạn thành `now + 15 phút` để tránh lỗi `EXPIRED_DEADLINE`.
+   - **Thay thế người nhận (Safe Address)**: Phát hiện địa chỉ ví của người khác trong calldata và tự động thay bằng địa chỉ ví của chủ nhân (`USER_WALLET`).
+   - **Thay thế mã Token ID Agent (Safe Agent Token ID)**: Phát hiện mã `tokenId` Agent ID của người khác và tự động thay bằng mã Token ID chính chủ của tên miền `dop.ai` (`5834...39146`).
 
-3. **4 Lớp Kiểm Soát Rủi Ro & Chống Đốt Ví Chuyên Sâu (v3.3)**:
-   - **Daily spend cap (0.01 BNB/ngày)**: Mỗi lần mint tốn gas, bot cộng dồn từ receipt thật on-chain. Đủ 0.01 BNB là dừng hết ngày hôm đó, qua 0h UTC reset. Chống bot đốt sạch ví khi gặp chuỗi kèo lỗi.
-   - **Mass-deployer skip (≥10 deploy/24h)**: Trước khi mint, bot tìm deployer của contract bằng binary-search block tạo + cache. Quét số contract deployer đó tạo trong 24h qua -- nếu ≥10 thì skip. Deployer spam hàng loạt thường là scam hoặc NFT rác.
-   - **Junk-NFT check (tokenURI)**: Gọi tokenURI của NFT sắp mint -- nếu trả về rỗng, lỗi, hoặc metadata fake thì skip vĩnh viễn, không thử lại. Tránh mint NFT không có hình/nội dung thật.
-   - **Fail limit (2 lần/contract/ngày)**: Mỗi contract fail 2 lần (mint lỗi, preview reject, hoặc bị drainer guard chặn) thì bot dừng thử contract đó trong ngày. State lưu ở `logs/risk_state.json`, tự reset mỗi ngày.
+3. **Mô Phỏng Phòng Chống Rút Ruột & Rọ Lừa (Honeypot Pre-sell Simulation)**:
+   - Trước khi thực hiện lệnh xả token trên PancakeSwap, bot tự động mô phỏng chuyển token vào cặp LP qua `eth_call`.
+   - Nếu hàm chuyển bị chặn (dấu hiệu Honeypot chỉ cho mua/mint mà không cho bán), bot lập tức hủy lệnh để bảo toàn phí gas.
 
-4. **Lá Chắn Bảo Vệ Gas (Gas Floor Shield)**:
-   - Ngưỡng an toàn tối thiểu: `0.0015 BNB`. Nếu số dư ví tụt dưới ngưỡng này, hệ thống tự động ngừng mint mới.
+4. **Cảnh Báo Gom Hàng Dev (Dev Heavy Holding Guard)**:
+   - Kiểm tra ví deployer và owner (`0x8da5cb5b`).
+   - Nếu dev/owner nắm giữ **trên 30% tổng cung** token, bot ghi nhận cảnh báo nguy cơ xả hàng (dump risk) tức thì.
 
-5. **Theo Dõi Danh Mục Đầu Tư Toàn Diện (Portfolio Sentinel v2.0)**:
-   - **FAGENT PoA Vault**: Giám sát tiến độ mở thẻ (#36,200+ / 38,000) và quỹ cổ tức Round 4 (hiện đạt 35+ BNB).
-   - **Ptah Trade IAO**: Theo dõi hợp đồng huy động 424 BNB và đếm ngược giờ lập pool PancakeSwap.
-   - **Hash21**: Giám sát phần thưởng $HASH, giá trị USD và thanh khoản pool.
+5. **Giới Hạn Chi Tiêu Mint Có Phí (Daily Paid Cap: $60 USD/ngày)**:
+   - Giám sát tổng chi phí mint trả phí hàng ngày, dừng khi chạm ngưỡng 60 USD (hoặc tương đương trong BNB/USDT), tự động reset lúc 00:00 UTC.
 
-6. **Theo Dõi Alpha Từ KOL Trên X (Twitter Alpha Sentinel)**:
-   - Giám sát các tweet từ KOL hàng đầu (AKAKAY04, nancy_c813, erjie22...) để phát hiện sớm các đợt phát hành contract mới.
+6. **Chó Săn Rà Soát Ủy Quyền Nguy Hiểm (Approvals Watchdog)**:
+   - Quét danh sách ủy quyền (`baw approvals list`) định kỳ mỗi 10 phút.
+   - Tự động thu hồi (`baw approvals revoke`) các ủy quyền đối với các địa chỉ độc hại hoặc giao thức từng bị chiếm quyền DNS (như Flap).
+
+7. **Bộ 4 Lớp Kiểm Soát Rủi Ro Cốt Lõi (v3.3)**:
+   - **Daily spend cap (0.01 BNB/ngày gas)**: Đọc receipt on-chain thực tế, dừng khi hết quota gas.
+   - **Mass-deployer skip (≥10 deploy/24h)**: Chặn deployer spam hàng loạt.
+   - **Junk-NFT check (tokenURI)**: Loại bỏ NFT không có hình/metadata rác.
+   - **Fail limit (2 lần/contract/ngày)**: Dừng thử lại contract lỗi quá 2 lần trong ngày.
 
 ---
 
@@ -37,25 +43,30 @@ Trọn bộ công cụ tự động hóa & mã nguồn cho **Binance Agentic Wal
 
 ```
 binance-aiagent-bundle/
-├── config.json                     # Cấu hình tập trung (RPC, Ví, Ngưỡng đồng thuận, Gas floor)
+├── config.json                     # Cấu hình tập trung (RPC, Ví, Agent ID, Cap chi tiêu, Tham số rủi ro)
 ├── SKILL.md                        # Định nghĩa Skill cho Claude Code / Muse Agent
 ├── README.md                       # Tài liệu hướng dẫn sử dụng
 ├── data/
+│   ├── deployer_cache.json         # Bộ nhớ đệm số contract của từng deployer
 │   └── smart_wallets_list.json     # Cơ sở dữ liệu 4,942 Smart Wallets uy tín hàng đầu BSC
 ├── logs/                           # Thư mục lưu nhật ký vận hành tự động
+│   ├── risk_state.json             # Trạng thái rủi ro (quota gas, quota chi tiêu, lỗi contract)
 │   ├── sniper_activity.log         # Lịch sử săn kèo mint & xả token
 │   ├── portfolio_sentinel.log      # Lịch sử biến động giá Hash21, IAO & Vault FAGENT
+│   ├── session_keepalive.log       # Lịch sử giữ nhịp kết nối ví BAW
 │   └── twitter_alpha.log           # Lịch sử quét alpha từ KOLs
 ├── scripts/
-│   ├── run_all.py                  # Kịch bản khởi chạy đồng thời tất cả daemon
-│   ├── smart_sniper_daemon.py      # Daemon săn kèo v3.2 (>10 ví, canh LP 4s, dump BNB)
-│   ├── portfolio_price_sentinel.py # Daemon canh giá & giám sát cổ tức v2.0
+│   ├── risk_guards.py              # Thư viện bảo mật (ProxyResolver, AgentExclusivity, PayloadAdapter, Honeypot, DevHolding, ApprovalsWatchdog)
+│   ├── run_all.py                  # Kịch bản khởi chạy & tự phục hồi toàn bộ daemon
+│   ├── session_keepalive_daemon.py # Daemon duy trì phiên BAW chống ngắt kết nối
+│   ├── smart_sniper_daemon.py      # Daemon săn kèo v3.4 (tích hợp 9 lớp kiểm soát rủi ro)
+│   ├── portfolio_price_sentinel.py # Daemon canh giá & giám sát cổ tức v2.2 (tích hợp ApprovalsWatchdog)
 │   ├── twitter_alpha_sentinel.py   # Daemon quét tweet alpha
 │   ├── ptah_iao_manager.py         # Kịch bản kiểm tra tiến độ IAO & airdrop
 │   ├── market_order_swapper.py     # Công cụ swap nhanh token trên PancakeSwap qua BAW
 │   ├── solve_agentic_pixels.py     # Giải toán PoW on-chain Agentic Pixels & kiểm tra $AGENT
 │   ├── veil_sentinel.py            # Giám sát unpause Robinhood Chain (4663) & Veil ZK Router
-│   ├── fist_agent_manager.py       # Kiểm định Agent ID allocation FISTAGENT & cảnh báo chênh lệch giá
+│   ├── fist_agent_manager.py       # Kiểm định Agent ID allocation FISTAGENT
 │   ├── contract_interactor.py      # Công cụ mô phỏng & gọi contract an toàn
 │   └── wallet_portfolio_scanner.py # Công cụ kiểm kê số dư & tài sản on-chain
 └── references/                     # 17 tài liệu tra cứu lệnh BAW chi tiết
@@ -63,20 +74,10 @@ binance-aiagent-bundle/
 
 ---
 
-## 🛠️ Hướng Dẫn Kích Hoạt Nhanh
+## 🛠️ Hướng Dẫn Vận Hành
 
-### Cách 1: Ném Trực Tiếp Vào Muse
-- Chỉ cần ném thư mục `binance-aiagent-bundle` hoặc tệp `binance-aiagent-bundle.zip` vào **Muse**.
-- Muse sẽ tự động đọc `SKILL.md` và hiểu toàn bộ tập lệnh, quy tắc an toàn cũng như cấu trúc dự án.
-
-### Cách 2: Chạy Bằng Lệnh Terminal
 ```bash
-# 1. Chạy tất cả các cỗ máy (Sniper + Sentinel + Alpha Tracker)
+# Khởi chạy toàn bộ hệ thống daemon (Keepalive + Smart Sniper v3.4 + Sentinel v2.2 + Twitter Alpha)
 python scripts/run_all.py
-
-# 2. Hoặc chạy riêng từng cỗ máy theo nhu cầu
-python scripts/smart_sniper_daemon.py       # Săn mint & auto-dump về BNB
-python scripts/portfolio_price_sentinel.py  # Canh giá & cổ tức
-python scripts/ptah_iao_manager.py          # Kiểm tra tiến độ IAO & airdrop
-python scripts/wallet_portfolio_scanner.py  # Kiểm kê tài sản ví
 ```
+Hệ thống tự động giám sát các tiến trình con, tự phục hồi nếu xảy ra sự cố ngắt quãng và ghi nhật ký đầy đủ tại thư mục `logs/`.
