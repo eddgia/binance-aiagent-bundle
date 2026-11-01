@@ -81,6 +81,7 @@ KNOWN_MINTED = {
     "0x6884D40B10c55A6c2faB2D3c829d41c3C798279D".lower(), # Hash21 Pool
     "0xa2556377118dD333F9f09600DE0bBCf54Cbc69A0".lower(), # Ptah IAO Offering
     "0x213a879d11a85b54483cea2cdec5d9026958add3".lower(), # EnigmaAgent Tablet
+    "0x3e9b4f58e2bc9b064f002cf89531e12fc5cfa00f".lower(), # HIVE Pollen Share
 }
 
 FAILED_CONTRACTS = set()

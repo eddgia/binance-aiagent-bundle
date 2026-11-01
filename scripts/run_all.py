@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Binance AI Agent Master Runner
-Launches the Smart Sniper Daemon, Portfolio Price Sentinel, and Twitter Alpha Sentinel in parallel.
+Launches the Smart Sniper Daemon, Portfolio Price Sentinel, and Twitter Alpha Sentinel in parallel with auto-recovery.
 """
 
 import subprocess
@@ -9,49 +9,58 @@ import sys
 import os
 import time
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def start_daemons():
-    print("=" * 60)
-    print("      BINANCE AI AGENT - MASTER DAEMON LAUNCHER")
-    print("=" * 60)
+    print("=" * 60, flush=True)
+    print("      BINANCE AI AGENT - MASTER DAEMON LAUNCHER (PC)", flush=True)
+    print("=" * 60, flush=True)
     
     scripts = [
-        ("Smart Sniper Daemon v3.2 (>10 Wallets Consensus)", "smart_sniper_daemon.py"),
+        ("Smart Sniper Daemon v3.3 (4 Risk Controls)", "smart_sniper_daemon.py"),
         ("Portfolio & Price Sentinel v2.0", "portfolio_price_sentinel.py"),
         ("Twitter Alpha Sentinel", "twitter_alpha_sentinel.py")
     ]
     
-    processes = []
-    for name, script in scripts:
-        script_path = os.path.join(BASE_DIR, script)
+    managed = []
+    for name, script_file in scripts:
+        script_path = os.path.join(BASE_DIR, script_file)
         if os.path.exists(script_path):
-            print(f"▶️ Starting: {name}...")
-            p = subprocess.Popen([sys.executable, script_path])
-            processes.append((name, p))
+            print(f"▶️ Starting: {name} ({script_file})...", flush=True)
+            p = subprocess.Popen([sys.executable, "-u", script_path])
+            managed.append({"name": name, "path": script_path, "proc": p})
             time.sleep(1)
         else:
-            print(f"⚠️ Missing: {script_path}")
+            print(f"⚠️ Missing: {script_path}", flush=True)
             
-    print("=" * 60)
-    print("✅ All services active! Press Ctrl+C to terminate all.")
-    print("=" * 60)
+    print("=" * 60, flush=True)
+    print("✅ All services active! Monitoring health...", flush=True)
+    print("=" * 60, flush=True)
     
     try:
         while True:
             time.sleep(5)
-            for name, p in processes:
-                if p.poll() is not None:
-                    print(f"⚠️ Warning: {name} stopped with exit code {p.returncode}. Restarting...")
-                    script_path = os.path.join(BASE_DIR, script)
-                    new_p = subprocess.Popen([sys.executable, script_path])
-                    processes.remove((name, p))
-                    processes.append((name, new_p))
+            for item in managed:
+                proc = item["proc"]
+                if proc.poll() is not None:
+                    print(f"⚠️ Warning: {item['name']} stopped (code {proc.returncode}). Restarting...", flush=True)
+                    time.sleep(2)
+                    new_p = subprocess.Popen([sys.executable, "-u", item["path"]])
+                    item["proc"] = new_p
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down all daemons...")
-        for name, p in processes:
-            p.terminate()
-        print("Done.")
+        print("\n🛑 Shutting down all daemons...", flush=True)
+        for item in managed:
+            try:
+                item["proc"].terminate()
+            except Exception:
+                pass
+        print("Done.", flush=True)
 
 if __name__ == "__main__":
     start_daemons()

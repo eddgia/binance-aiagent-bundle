@@ -1,6 +1,26 @@
 {
   "date": "2026-11-01",
-  "daily_spent_bnb": 0.0,
-  "contract_failures": {},
-  "tx_receipts": []
+  "daily_spent_bnb": 4.86e-06,
+  "contract_failures": {
+    "0x15e47c22df42d94fa2f0ad078fec5bea6453d5cf": 1,
+    "0x5c221475239decfb241cb3337257e76fdfae8945": 1,
+    "0xb300000b72deaeb607a12d5f54773d1c19c7028d": 1,
+    "0xc8bc9300bf850cbc028912ad7c345604b29608c2": 1,
+    "0x7fe3d7e6e18a31a8751db78ee7c7a8ffef0f2528": 1,
+    "0x10ed43c718714eb63d5aa57b78b54704e256024e": 1,
+    "0x409cfe3747f1ac20f267b50bcbb6a4e9406da3a8": 1,
+    "0x55d398326f99059ff775485246999027b3197955": 1,
+    "0x876920c456416309db8cb0805df6e35ead067be3": 1,
+    "0x3e9b4f58e2bc9b064f002cf89531e12fc5cfa00f": 1,
+    "0xd96b5791f4e24b130efcc9979e9da85865b0c212": 1
+  },
+  "tx_receipts": [
+    {
+      "contract": "0x3E9B4F58e2bC9b064F002cF89531e12FC5CfA00f",
+      "name": "HIVE Pollen Share",
+      "tx": "0x5d5c67a37df4e068addfac34b77015c0df13a3d1d1b55917fd5b4eafe1904030",
+      "spent_bnb": 4.86e-06,
+      "timestamp": "2026-11-01 17:27:19"
+    }
+  ]
 }
