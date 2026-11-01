@@ -98,6 +98,7 @@ KNOWN_MINTED = {
     "0x827e83e49bd7e15b67efa0e90fc25f17b8d96124".lower(), # LONG Agent (Quota exhausted)
     "0xbb77f247e6b57f4dcd09c5900b2ffc4250b6b88f".lower(), # QILIN Agent Mint (50,000 QILIN minted)
     "0x4FB644959F79848674acc4a48D8a3d99fc767aC2".lower(), # QILIN Token
+    "0x0EED2C5e866A3792f587CAf0839941EA57fe6915".lower(), # HashDroids Operator Pass (Pass #5024 dop.ai)
 }
 
 FAILED_CONTRACTS = set()
