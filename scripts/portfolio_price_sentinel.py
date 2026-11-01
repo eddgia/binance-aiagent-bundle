@@ -48,6 +48,8 @@ IAO_OFFERING = "0xa2556377118dD333F9f09600DE0bBCf54Cbc69A0"
 FAGENT_CARD = "0xD87ADb2E47979d6cb323896B1A9320E0dd132213"
 FAGENT_VAULT = "0x773d4E6b70176D2cf41938F8FE6d7c7136015Bf8"
 FIREBEARER_TOKEN = "0x8b47354E7b76B1970a0D06365c8244a810d37493"
+QILIN_TOKEN = "0x4FB644959F79848674acc4a48D8a3d99fc767aC2"
+QILIN_MINT = "0xbb77f247e6b57f4dcd09c5900b2ffc4250b6b88f"
 
 LOG_FILE = os.path.join(LOGS_DIR, "portfolio_sentinel.log")
 
@@ -207,6 +209,25 @@ def check_firebearer(wbnb_usd):
     except Exception as e:
         pass
 
+def check_qilin(wbnb_usd):
+    try:
+        pad_wallet = USER_WALLET[2:].lower().rjust(64, '0')
+        bal_res = eth_call(QILIN_TOKEN, get_sel("balanceOf(address)") + pad_wallet)
+        bal = int(bal_res, 16) / 1e18 if bal_res and bal_res != "0x" else 0.0
+        sold_res = eth_call(QILIN_MINT, get_sel("cardsSold()"))
+        sold = int(sold_res, 16) if sold_res and sold_res != "0x" else 0
+        rem_res = eth_call(QILIN_MINT, get_sel("freeCardsRemaining()"))
+        free_rem = int(rem_res, 16) if rem_res and rem_res != "0x" else 0
+        pair = get_pancake_pair(QILIN_TOKEN, WBNB)
+        status_lp = f"Minting {sold}/10,000 (Free Left: {free_rem:,})"
+        if pair:
+            r0, r1 = get_reserves(pair)
+            if r0 > 0 and r1 > 0:
+                status_lp = f"LP Active ({pair[:10]}...)"
+        log(f"[QILIN] Balance: {bal:,.0f} QILIN | Sold: {sold}/10,000 | Status: {status_lp}")
+    except Exception as e:
+        pass
+
 def open_watch():
     """Nancy v2.8.0 / v2.8.2: Rapid 15s scanner for newly opened liquidity pools.
     Detects when minting completes and PancakeSwap pool launches without waiting for slow portfolio cycles.
@@ -221,13 +242,20 @@ def open_watch():
             r0, r1 = get_reserves(pair)
             if r0 > 0 and r1 > 0:
                 log(f"🚀 [POOL OPENED] Firebearer (传火人) LP Active on PancakeSwap V2! Pair: {pair}")
+
+        # Check QILIN
+        qilin_pair = get_pancake_pair(QILIN_TOKEN, WBNB)
+        if qilin_pair:
+            r0, r1 = get_reserves(qilin_pair)
+            if r0 > 0 and r1 > 0:
+                log(f"🚀 [POOL OPENED] QILIN LP Active on PancakeSwap V2! Pair: {qilin_pair}")
     except Exception:
         pass
 
 def run_sentinel():
     log("🛰️ Binance AI Agent Portfolio & Price Sentinel v2.3 (Nancy v2.8.2 Rapid Sentinel) active!")
     log(f"   • Wallet: {USER_WALLET}")
-    log(f"   • Protocols: Hash21, Altar, FAGENT PoA Vault, Ptah IAO, Firebearer")
+    log(f"   • Protocols: Hash21, Altar, FAGENT PoA Vault, Ptah IAO, Firebearer, QILIN")
     log(f"   • Rapid Sentinels: 15s openWatch & fresh-token tracking, 10m ApprovalsWatchdog")
 
     last_watchdog = 0
@@ -247,6 +275,7 @@ def run_sentinel():
                 check_fagent_vault()
                 check_iao(wbnb_usd)
                 check_firebearer(wbnb_usd)
+                check_qilin(wbnb_usd)
 
             # Approvals Watchdog every 10 minutes (600s)
             if now - last_watchdog > 600:

@@ -96,6 +96,8 @@ KNOWN_MINTED = {
     "0x3e9b4f58e2bc9b064f002cf89531e12fc5cfa00f".lower(), # HIVE Pollen Share
     "0x8b47354e7b76b1970a0d06365c8244a810d37493".lower(), # Firebearer (50,000 FB minted)
     "0x827e83e49bd7e15b67efa0e90fc25f17b8d96124".lower(), # LONG Agent (Quota exhausted)
+    "0xbb77f247e6b57f4dcd09c5900b2ffc4250b6b88f".lower(), # QILIN Agent Mint (50,000 QILIN minted)
+    "0x4FB644959F79848674acc4a48D8a3d99fc767aC2".lower(), # QILIN Token
 }
 
 FAILED_CONTRACTS = set()
