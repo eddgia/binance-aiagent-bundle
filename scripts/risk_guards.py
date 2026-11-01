@@ -11,6 +11,7 @@ Ported and enhanced from Nancy v2.7.2 audit:
 """
 
 import sys
+import os
 import json
 import time
 import subprocess
@@ -23,6 +24,11 @@ try:
     sys.stderr.reconfigure(encoding='utf-8')
 except Exception:
     pass
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BUNDLE_ROOT = os.path.dirname(BASE_DIR)
+DATA_DIR = os.path.join(BUNDLE_ROOT, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 RPC_URL = "https://bsc-dataseed.binance.org"
 REGISTRY = "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F".lower()
@@ -289,3 +295,135 @@ class ApprovalsWatchdog:
             return revoked
         except Exception:
             return []
+
+
+class NftStrictGuard:
+    """Nancy v2.7.3: Deep NFT artwork validation and duplicate image detection across contracts."""
+
+    def __init__(self, data_dir=DATA_DIR):
+        self.seen_path = os.path.join(data_dir, "seen_nft_images.json")
+        self.seen = self._load()
+
+    def _load(self):
+        if os.path.exists(self.seen_path):
+            try:
+                with open(self.seen_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save(self):
+        try:
+            with open(self.seen_path, "w", encoding="utf-8") as f:
+                json.dump(self.seen, f, indent=2)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _resolve_gw(url):
+        if not url:
+            return ""
+        if url.startswith("ipfs://"):
+            return "https://ipfs.io/ipfs/" + url[7:]
+        return url
+
+    def check_nft_strict(self, contract_addr):
+        ca = contract_addr.lower()
+        # Query tokenURI(1), tokenURI(0), uri(1)
+        uri = ""
+        for sel, tid in [("0xc87b56dd", "0000000000000000000000000000000000000000000000000000000000000001"),
+                         ("0xc87b56dd", "0000000000000000000000000000000000000000000000000000000000000000"),
+                         ("0x0e89341c", "0000000000000000000000000000000000000000000000000000000000000001")]:
+            res = eth_call(ca, sel + tid)
+            if res and len(res) > 130:
+                try:
+                    s = bytes.fromhex(res[130:]).decode("utf-8", errors="ignore").strip("\x00")
+                    if s:
+                        uri = s
+                        break
+                except Exception:
+                    pass
+
+        if not uri:
+            return True, "No public tokenURI yet (New deployment)"
+
+        # Parse metadata
+        meta = None
+        try:
+            if uri.startswith("data:application/json;base64,"):
+                import base64
+                meta = json.loads(base64.b64decode(uri.split(",")[1]).decode("utf-8"))
+            elif uri.startswith("data:application/json,"):
+                import urllib.parse
+                meta = json.loads(urllib.parse.unquote(uri.split(",")[1]))
+            elif uri.startswith("http://") or uri.startswith("https://") or uri.startswith("ipfs://"):
+                url = self._resolve_gw(uri)
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
+                    meta = json.loads(r.read().decode("utf-8", errors="ignore"))
+        except Exception:
+            pass
+
+        if not meta or not isinstance(meta, dict):
+            return True, "Metadata not yet parsed or off-chain"
+
+        img = meta.get("image") or meta.get("image_url") or meta.get("animation_url")
+        if not img:
+            return False, "NFT metadata exists but contains no valid image link"
+
+        # Calculate image hash / normalized signature
+        import hashlib
+        img_sig = ""
+        try:
+            if img.startswith("data:image/"):
+                img_sig = hashlib.sha256(img.encode("utf-8")).hexdigest()
+            else:
+                img_url = self._resolve_gw(img)
+                req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+                    img_bytes = r.read(512000)
+                    if len(img_bytes) > 100:
+                        img_sig = hashlib.sha256(img_bytes).hexdigest()
+        except Exception:
+            img_sig = hashlib.sha256(str(img).encode("utf-8")).hexdigest()
+
+        if img_sig:
+            if img_sig in self.seen and self.seen[img_sig] != ca:
+                prior_contract = self.seen[img_sig]
+                return False, f"Duplicate NFT image detected! Exact artwork was already used in contract {prior_contract[:10]}... (Rug/Spam prevention)"
+            self.seen[img_sig] = ca
+            self._save()
+
+        return True, "Valid distinctive NFT artwork verified"
+
+
+class HybridPaidGuard:
+    """Nancy v2.7.4: Detects contracts where the first mint is free but others are paying."""
+
+    @staticmethod
+    def is_hybrid_paid(contract_addr):
+        ca = contract_addr.lower()
+        curr_blk_hex = rpc("eth_blockNumber", [])
+        if not curr_blk_hex:
+            return False
+        curr_blk = int(curr_blk_hex, 16)
+        from_blk = hex(max(1, curr_blk - 1500))
+
+        logs = rpc("eth_getLogs", [{"address": ca, "fromBlock": from_blk, "toBlock": "latest"}]) or []
+        tx_hashes = list(set(l.get("transactionHash") for l in logs if l.get("transactionHash")))[-20:]
+        if len(tx_hashes) < 4:
+            return False
+
+        paid_calls = 0
+        total_calls = 0
+        for th in tx_hashes:
+            tx = rpc("eth_getTransactionByHash", [th])
+            if tx and (tx.get("to") or "").lower() == ca:
+                total_calls += 1
+                if int(tx.get("value", "0x0"), 16) > 0:
+                    paid_calls += 1
+
+        if total_calls >= 4 and (paid_calls / total_calls) >= 0.50:
+            return True
+        return False

@@ -105,10 +105,13 @@ from risk_guards import (
     AgentExclusivityGuard,
     PayloadAdapter,
     HoneypotChecker,
-    DevHoldingGuard
+    DevHoldingGuard,
+    NftStrictGuard,
+    HybridPaidGuard
 )
 
 exclusivity_guard = AgentExclusivityGuard()
+nft_strict_guard = NftStrictGuard(DATA_DIR)
 
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -570,12 +573,23 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
             FAILED_CONTRACTS.add(to_lower)
             return
 
-    # [4] JUNK-NFT CHECK (tokenURI validation)
+    # [4] JUNK-NFT & STRICT ARTWORK CHECK (Nancy v2.7.3: Deep metadata + duplicate artwork detection)
     valid_meta, meta_info = junk_checker.check_nft_metadata(to_addr)
     if not valid_meta:
         log(f"🗑️ [JUNK-NFT SKIP] Contract {to_addr} metadata invalid: {meta_info}. Permanently blacklisted!")
         FAILED_CONTRACTS.add(to_lower)
         return
+
+    valid_strict, strict_info = nft_strict_guard.check_nft_strict(to_addr)
+    if not valid_strict:
+        log(f"🖼️ [NFT STRICT GUARD SKIP] Contract {to_addr}: {strict_info}. Skipping!")
+        FAILED_CONTRACTS.add(to_lower)
+        return
+
+    # [4b] HYBRID PAID DETECTION (Nancy v2.7.4: First free subsequent paid projects treated as paid)
+    is_hybrid = HybridPaidGuard.is_hybrid_paid(to_addr)
+    if is_hybrid:
+        log(f"💱 [HYBRID PAID PROJECT] Contract {to_addr} has >=50% paid transactions on-chain. Enforcing paid safety quota ($60/day).")
 
     # [5] AGENT ID EXCLUSIVITY VERIFICATION (Nancy v2.7.2)
     is_exclusive, ex_reason = exclusivity_guard.is_agent_exclusive(to_addr)
