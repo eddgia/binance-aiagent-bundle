@@ -207,25 +207,50 @@ def check_firebearer(wbnb_usd):
     except Exception as e:
         pass
 
+def open_watch():
+    """Nancy v2.8.0 / v2.8.2: Rapid 15s scanner for newly opened liquidity pools.
+    Detects when minting completes and PancakeSwap pool launches without waiting for slow portfolio cycles.
+    """
+    try:
+        # Check Firebearer
+        pair_res = eth_call(FIREBEARER_TOKEN, get_sel("pancakePair()"))
+        pair = ("0x" + pair_res[-40:]) if pair_res and pair_res != "0x" and len(pair_res) >= 66 else None
+        liq_res = eth_call(FIREBEARER_TOKEN, get_sel("liquidityAdded()"))
+        liq_added = bool(int(liq_res, 16)) if liq_res and liq_res != "0x" else False
+        if liq_added and pair and pair != "0x0000000000000000000000000000000000000000":
+            r0, r1 = get_reserves(pair)
+            if r0 > 0 and r1 > 0:
+                log(f"🚀 [POOL OPENED] Firebearer (传火人) LP Active on PancakeSwap V2! Pair: {pair}")
+    except Exception:
+        pass
+
 def run_sentinel():
-    log("🛰️ Binance AI Agent Portfolio & Price Sentinel v2.2 active!")
+    log("🛰️ Binance AI Agent Portfolio & Price Sentinel v2.3 (Nancy v2.8.2 Rapid Sentinel) active!")
     log(f"   • Wallet: {USER_WALLET}")
     log(f"   • Protocols: Hash21, Altar, FAGENT PoA Vault, Ptah IAO, Firebearer")
-    log(f"   • Background Watchdog: ApprovalsWatchdog (scans for compromised spenders every 10m)")
+    log(f"   • Rapid Sentinels: 15s openWatch & fresh-token tracking, 10m ApprovalsWatchdog")
 
     last_watchdog = 0
+    last_full_cycle = 0
 
     while True:
         try:
-            wbnb_usd = get_wbnb_price_usd()
-            check_hash21(wbnb_usd)
-            check_fagent_vault()
-            check_iao(wbnb_usd)
-            check_firebearer(wbnb_usd)
+            now = time.time()
+            # Rapid 15s check for open pools
+            open_watch()
 
-            # Approvals Watchdog every 10 minutes
-            if time.time() - last_watchdog > 600:
-                last_watchdog = time.time()
+            # Full portfolio cycle every 120s
+            if now - last_full_cycle >= 120:
+                last_full_cycle = now
+                wbnb_usd = get_wbnb_price_usd()
+                check_hash21(wbnb_usd)
+                check_fagent_vault()
+                check_iao(wbnb_usd)
+                check_firebearer(wbnb_usd)
+
+            # Approvals Watchdog every 10 minutes (600s)
+            if now - last_watchdog > 600:
+                last_watchdog = now
                 revoked = ApprovalsWatchdog.scan_and_revoke()
                 if revoked:
                     for r in revoked:
@@ -235,7 +260,7 @@ def run_sentinel():
 
         except Exception as e:
             log(f"[SENTINEL ERROR] {e}")
-        time.sleep(120)
+        time.sleep(15)
 
 if __name__ == "__main__":
     run_sentinel()

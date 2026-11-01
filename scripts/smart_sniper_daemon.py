@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Binance AI Agent Smart Sniper Daemon v3.4 (Production / Nancy v2.7.2 Deep Integration)
+Binance AI Agent Smart Sniper Daemon v3.5 (Nancy v2.8.3 Deep Integration)
 Autonomous sniper with >10 Wallets Consensus, Fast LP Polling, Drainer Guard & Instant BNB Dump.
 
 Integrated Guardrails & Enhancements:
 1. Daily spend cap (0.01 BNB/day gas): Tracks real on-chain gas from receipts, pauses at 0.01 BNB until 00:00 UTC.
 2. Daily paid cap ($60 USD/day): Enforces 60 USD maximum daily spend for paid mints.
-3. Mass-deployer skip (>=10 deploy/24h): Binary-search deployment block + cache; skips spam deployers.
-4. Junk-NFT check (tokenURI): Validates tokenURI; permanently blacklists empty or fake metadata NFTs.
-5. Fail limit (2 fails/contract/day): Halts retrying after 2 failures; state in logs/risk_state.json.
-6. Agent ID Exclusivity Verification: Validates Space ID registry bytecode (with EIP-1967/Beacon/EIP-1167 proxy resolution) or >=60% callers hold Agent ID.
-7. Dynamic Calldata Adaptation: Normalizes replay calldata (updates expired deadlines, replaces foreign recipient with user wallet, replaces foreign agentTokenId with dop.ai).
-8. Honeypot Pre-sell Simulation: Verifies transfer to LP pair succeeds prior to executing market dump.
-9. Dev Heavy Holding Warning: Warns if dev/owner holds > 30% of total token supply.
+3. Mass-deployer skip (>=10 deploy/24h): Binary-search deployment block + permanent blacklist cache (Nancy v2.7.7).
+4. Junk-NFT & Strict Artwork Check: Validates tokenURI + SHA-256 duplicate image detection (Nancy v2.7.3).
+5. Hybrid-Paid Guard: Detects >=50% paid caller consensus and switches to paid quota rules (Nancy v2.7.4).
+6. Anti-Targeted Phishing Guard: Enforces total pool >= 10 BNB, sold >= 500 or raised >= 5 BNB (Nancy v2.8.0).
+7. Anti-Sybil Alt-Account Guard: Excludes fresh Agent IDs (<24h) and low-tx (<8 nonce) wallets (Nancy v2.8.1).
+8. Fail limit (2 fails/contract/day): Halts retrying after 2 failures; state in logs/risk_state.json.
+9. Agent ID Exclusivity Verification: Validates Space ID registry bytecode or >=60% callers hold Agent ID.
+10. Dynamic Calldata Adaptation: Normalizes replay calldata (deadline/recipient/tokenId).
+11. Honeypot Pre-sell Simulation: Verifies transfer to LP pair succeeds prior to executing market dump.
+12. Dev Heavy Holding Warning: Warns if dev/owner holds > 30% of total token supply.
 """
 
 import sys
@@ -91,6 +94,8 @@ KNOWN_MINTED = {
     "0xa2556377118dD333F9f09600DE0bBCf54Cbc69A0".lower(), # Ptah IAO Offering
     "0x213a879d11a85b54483cea2cdec5d9026958add3".lower(), # EnigmaAgent Tablet
     "0x3e9b4f58e2bc9b064f002cf89531e12fc5cfa00f".lower(), # HIVE Pollen Share
+    "0x8b47354e7b76b1970a0d06365c8244a810d37493".lower(), # Firebearer (50,000 FB minted)
+    "0x827e83e49bd7e15b67efa0e90fc25f17b8d96124".lower(), # LONG Agent (Quota exhausted)
 }
 
 FAILED_CONTRACTS = set()
@@ -107,11 +112,15 @@ from risk_guards import (
     HoneypotChecker,
     DevHoldingGuard,
     NftStrictGuard,
-    HybridPaidGuard
+    HybridPaidGuard,
+    TargetedPhishingGuard,
+    SybilAgentGuard,
+    ContractTreasuryGuard
 )
 
 exclusivity_guard = AgentExclusivityGuard()
 nft_strict_guard = NftStrictGuard(DATA_DIR)
+phishing_guard = TargetedPhishingGuard()
 
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -242,12 +251,19 @@ risk_state = RiskStateManager(LOGS_DIR)
 # 2. MASS-DEPLOYER GUARD (Binary-Search Deployment Block + Cache)
 # ==============================================================================
 class MassDeployerGuard:
-    """Finds deployer of contract via binary search & skips mass deployers (>=10 deploy/24h)."""
+    """Finds deployer of contract via binary search & skips mass deployers (>=10 deploy/24h).
+    Nancy v2.7.7: Caches known spam deployers permanently to avoid repeating binary searches.
+    """
     def __init__(self, data_dir, rpc_func, max_deploys_24h=MAX_MASS_DEPLOYS_24H):
         self.cache_path = os.path.join(data_dir, "deployer_cache.json")
         self.rpc = rpc_func
         self.max_deploys_24h = max_deploys_24h
         self.cache = self._load()
+        self.blacklisted_deployers = set(
+            v.get("deployer") for v in self.cache.values()
+            if sum(1 for x in self.cache.values() if x.get("deployer") == v.get("deployer")) >= self.max_deploys_24h
+            and v.get("deployer") not in (None, "prior_block")
+        )
 
     def _load(self):
         if os.path.exists(self.cache_path):
@@ -315,12 +331,23 @@ class MassDeployerGuard:
         return None, None
 
     def is_mass_deployer(self, contract_addr, current_block):
+        ca = contract_addr.lower()
+        cached_dep = self.cache.get(ca, {}).get("deployer")
+        if cached_dep and cached_dep in self.blacklisted_deployers:
+            return True, self.max_deploys_24h, cached_dep
+
         deployer, _ = self.get_deployer(contract_addr, current_block)
         if not deployer or deployer == "prior_block":
             return False, 0, deployer
 
+        if deployer in self.blacklisted_deployers:
+            return True, self.max_deploys_24h, deployer
+
         count = sum(1 for v in self.cache.values() if v.get("deployer") == deployer)
-        return (count >= self.max_deploys_24h), count, deployer
+        if count >= self.max_deploys_24h:
+            self.blacklisted_deployers.add(deployer)
+            return True, count, deployer
+        return False, count, deployer
 
 deployer_guard = MassDeployerGuard(DATA_DIR, rpc)
 
@@ -590,6 +617,18 @@ def handle_candidate(to_addr, input_data, consensus_count, source_wallet, curren
     is_hybrid = HybridPaidGuard.is_hybrid_paid(to_addr)
     if is_hybrid:
         log(f"💱 [HYBRID PAID PROJECT] Contract {to_addr} has >=50% paid transactions on-chain. Enforcing paid safety quota ($60/day).")
+
+    # [4c] TARGETED PHISHING GUARD (Nancy v2.8.0: Anti-Targeted Phishing, min pool depth & volume)
+    try:
+        supp_hex = rpc("eth_call", [{"to": to_addr, "data": "0x18160ddd"}, "latest"])
+        sold_count = int(supp_hex, 16) if supp_hex and supp_hex != "0x" else None
+        ok_depth, depth_msg = phishing_guard.check_pool_depth(to_addr, 0, None, sold_count)
+        if not ok_depth:
+            log(f"🎣 [TARGETED PHISHING SKIP] {to_addr}: {depth_msg}")
+            FAILED_CONTRACTS.add(to_lower)
+            return
+    except Exception:
+        pass
 
     # [5] AGENT ID EXCLUSIVITY VERIFICATION (Nancy v2.7.2)
     is_exclusive, ex_reason = exclusivity_guard.is_agent_exclusive(to_addr)

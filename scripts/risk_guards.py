@@ -427,3 +427,112 @@ class HybridPaidGuard:
         if total_calls >= 4 and (paid_calls / total_calls) >= 0.50:
             return True
         return False
+
+
+class TargetedPhishingGuard:
+    """Nancy v2.8.0: Anti-Targeted Phishing Guard.
+    Prevents scam projects with tiny pools where a few wallets artificially push progress to 70%.
+    Criteria:
+    1. Total pool market cap must be >= 10 BNB (cap * unitPrice >= 10 BNB).
+    2. Sold shares must be >= 500 OR raised >= 5 BNB.
+    3. Our wallet cannot buy > 2% of total cap.
+    """
+    @staticmethod
+    def check_pool_depth(contract_addr, unit_bnb, total_cap, sold_shares):
+        ca = contract_addr.lower()
+        if unit_bnb > 0 and total_cap:
+            total_raised_bnb = total_cap * unit_bnb
+            if total_raised_bnb < 10.0:
+                return False, f"Targeted Phishing: Total pool too small ({total_cap} shares * {unit_bnb:.4f} BNB = {total_raised_bnb:.2f} BNB < 10 BNB threshold)"
+        if sold_shares is not None:
+            raised_so_far = (sold_shares * unit_bnb) if unit_bnb > 0 else 0
+            if sold_shares < 500 and (unit_bnb == 0 or raised_so_far < 5.0):
+                return False, f"Targeted Phishing: Sold shares too low ({sold_shares} shares, ~{raised_so_far:.2f} BNB < 500 shares / 5 BNB threshold)"
+        return True, "Passed pool depth & anti-targeted phishing audit"
+
+    @staticmethod
+    def get_max_our_bnb(total_cap, unit_bnb, num_wallets=1):
+        if total_cap and unit_bnb > 0:
+            return (total_cap * unit_bnb * 0.02) / max(1, num_wallets)
+        return 0.0
+
+
+class SybilAgentGuard:
+    """Nancy v2.8.1: Anti-Sybil Alt-Account Guard.
+    When verifying the 100+ Agent ID wallet consensus, filters out:
+    1. Fresh Agent IDs registered within 24 hours (last ~28,800 BSC blocks).
+    2. Wallets with < 8 transactions on-chain (throwaway bot wallets).
+    """
+    _fresh_agents = set()
+    _last_fresh_check = 0
+    _nonce_cache = {}
+
+    @classmethod
+    def get_fresh_agents(cls):
+        now = time.time()
+        if cls._fresh_agents and (now - cls._last_fresh_check < 900):  # 15 mins cache
+            return cls._fresh_agents
+        try:
+            head_hex = rpc("eth_blockNumber", [])
+            if not head_hex:
+                return cls._fresh_agents
+            head = int(head_hex, 16)
+            fresh_set = set()
+            topic_transfer = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+            topic_zero = "0x" + "0" * 64
+            from_blk = hex(max(1, head - 28800))
+            logs = rpc("eth_getLogs", [{
+                "address": REGISTRY,
+                "fromBlock": from_blk,
+                "toBlock": hex(head),
+                "topics": [topic_transfer, topic_zero]
+            }]) or []
+            for l in logs:
+                topics = l.get("topics") or []
+                if len(topics) >= 3:
+                    recipient = "0x" + topics[2][-40:].lower()
+                    fresh_set.add(recipient)
+            cls._fresh_agents = fresh_set
+            cls._last_fresh_check = now
+        except Exception:
+            pass
+        return cls._fresh_agents
+
+    @classmethod
+    def filter_valid_agents(cls, address_list):
+        fresh = cls.get_fresh_agents()
+        valid_agents = []
+        for addr in address_list:
+            a = addr.lower()
+            if a in fresh:
+                continue
+            nonce = cls._nonce_cache.get(a)
+            if nonce is None:
+                nonce_hex = rpc("eth_getTransactionCount", [a, "latest"])
+                nonce = int(nonce_hex, 16) if nonce_hex else 0
+                cls._nonce_cache[a] = nonce
+            if nonce >= 8:
+                valid_agents.append(a)
+        return valid_agents
+
+
+class ContractTreasuryGuard:
+    """Nancy v2.7.8: Safe Treasury Assets Accounting.
+    When checking if funds are drained from a project contract, counts held BNB, WBNB, and USDT
+    to prevent false positives on legit projects holding assets in stablecoins/wrapped tokens.
+    """
+    @staticmethod
+    def get_contract_treasury_value_bnb(contract_addr):
+        ca = contract_addr.lower()
+        bal_bnb_hex = rpc("eth_getBalance", [ca, "latest"])
+        bnb_val = int(bal_bnb_hex, 16) / 1e18 if bal_bnb_hex else 0.0
+        padded_ca = ca[2:].rjust(64, "0")
+        wbnb_bal_hex = rpc("eth_call", [{"to": WBNB, "data": "0x70a08231" + padded_ca}, "latest"])
+        if wbnb_bal_hex and wbnb_bal_hex != "0x":
+            bnb_val += int(wbnb_bal_hex, 16) / 1e18
+        usdt_bal_hex = rpc("eth_call", [{"to": USDT, "data": "0x70a08231" + padded_ca}, "latest"])
+        if usdt_bal_hex and usdt_bal_hex != "0x":
+            usdt_amt = int(usdt_bal_hex, 16) / 1e18
+            bnb_val += (usdt_amt / 700.0)
+        return bnb_val
+

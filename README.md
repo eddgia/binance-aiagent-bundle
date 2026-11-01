@@ -1,41 +1,42 @@
-# 🚀 Binance AI Agent & Smart Sniper Suite v3.4
+# 🚀 Binance AI Agent & Smart Sniper Suite v3.5
 
-Trọn bộ công cụ tự động hóa & mã nguồn cho **Binance Agentic Wallet (`baw`)** trên mạng **BNB Smart Chain (BSC)**, tích hợp toàn diện các chuẩn kiểm soát rủi ro từ **Nancy v2.7.2** và chạy độc lập 24/7.
+Trọn bộ công cụ tự động hóa & mã nguồn cho **Binance Agentic Wallet (`baw`)** trên mạng **BNB Smart Chain (BSC)**, tích hợp toàn diện các chuẩn kiểm soát rủi ro từ **Nancy v2.8.3** và chạy độc lập 24/7.
 
 ---
 
-## 🌟 Điểm Mới Nổi Bật Trong Bản v3.4 (Nancy v2.7.2 Deep Integration)
+## 🌟 Điểm Mới Nổi Bật Trong Bản v3.5 (Nancy v2.8.3 Deep Integration)
 
-1. **Xác Minh Độc Quyền Agent ID (Agent ID Exclusivity Guard)**:
-   - Tự động kiểm tra mã bytecode contract xem có liên kết hợp đồng Space ID Registry (`0x60B9...022F`) hay không.
-   - Hỗ trợ **phân giải Proxy (ProxyResolver)**: Tự động truy vết EIP-1967 Implementation slot, Beacon slot (`0x5c60da1b`), và EIP-1167 Minimal Proxy clone để không bỏ sót các hợp đồng ủy quyền như FAGENT hay bibiai.
-   - Nếu contract dùng xác minh chữ ký backend website: Phân tích 3,000 block gần nhất, **yêu cầu tối thiểu 60% số ví gọi contract phải sở hữu .ai Agent ID thật** mới kích hoạt. Loại bỏ triệt để các dự án memecoin mạo danh.
+1. **Phòng Chống Dự Án Câu Nhử / Định Điểm (Anti-Targeted Phishing Guard - v2.8.0)**:
+   - Ngăn chặn triệt để thủ đoạn dev tạo dự án có tổng quỹ cực nhỏ (ví dụ chỉ 1 BNB hoặc 20 suất), tự dùng ví phụ mint đẩy tiến độ lên 70% để bẫy bot theo sau.
+   - **Quy tắc kiểm duyệt**:
+     - Tổng quy mô đợt mở bán (`Total Cap`) phải **$\ge 10$ BNB**.
+     - Đã bán tối thiểu **$\ge 500$ suất** HOẶC đã huy động thực tế **$\ge 5$ BNB**.
+     - Hạn mức mua tối đa của ví bot không vượt quá **2% tổng quỹ dự án**.
 
-2. **Tự Động Chuẩn Hóa & Thích Ứng Dữ Liệu Gọi (Dynamic Calldata Adapter)**:
-   - **Làm mới thời hạn (Fresh Deadline)**: Tự động phát hiện các tham số timestamp sắp hết hạn trong calldata và gia hạn thành `now + 15 phút` để tránh lỗi `EXPIRED_DEADLINE`.
-   - **Thay thế người nhận (Safe Address)**: Phát hiện địa chỉ ví của người khác trong calldata và tự động thay bằng địa chỉ ví của chủ nhân (`USER_WALLET`).
-   - **Thay thế mã Token ID Agent (Safe Agent Token ID)**: Phát hiện mã `tokenId` Agent ID của người khác và tự động thay bằng mã Token ID chính chủ của tên miền `dop.ai` (`5834...39146`).
+2. **Chống Tài Khoản Ảo / Sybil Tự Thổi Hot (Anti-Sybil Alt-Account Filter - v2.8.1)**:
+   - Khi tính toán số lượng ví Agent ID tham gia (ngưỡng 100+ ví):
+     - **Loại trừ ví non trẻ**: Các ví vừa đăng ký `.ai` Agent ID trong vòng 24 giờ qua sẽ không được tính.
+     - **Loại trừ ví rác/bot**: Các ví có số lượng giao dịch on-chain (nonce) **dưới 8 giao dịch** bị loại bỏ, tránh việc dev tạo hàng loạt ví rác để giả mạo cộng đồng đông đảo.
 
-3. **Mô Phỏng Phòng Chống Rút Ruột & Rọ Lừa (Honeypot Pre-sell Simulation)**:
-   - Trước khi thực hiện lệnh xả token trên PancakeSwap, bot tự động mô phỏng chuyển token vào cặp LP qua `eth_call`.
-   - Nếu hàm chuyển bị chặn (dấu hiệu Honeypot chỉ cho mua/mint mà không cho bán), bot lập tức hủy lệnh để bảo toàn phí gas.
+3. **Giám Sát Mở Pool & Bắt Đỉnh Tức Thì 15 Giây (Rapid 15s Open Sentinel - v2.8.2)**:
+   - Vòng lặp `openWatch` độc lập quét mỗi 15 giây đối với các token vừa mint xong đang chờ thêm thanh khoản PancakeSwap V2.
+   - Khi pool vừa mở trong vòng 30 phút đầu, bot theo dõi giá mỗi 15 giây để nắm bắt biến động nhạy bén, không bị trễ theo chu kỳ kiểm tra danh mục thông thường.
 
-4. **Cảnh Báo Gom Hàng Dev (Dev Heavy Holding Guard)**:
-   - Kiểm tra ví deployer và owner (`0x8da5cb5b`).
-   - Nếu dev/owner nắm giữ **trên 30% tổng cung** token, bot ghi nhận cảnh báo nguy cơ xả hàng (dump risk) tức thì.
+4. **Tự Động Mua Token AI Thịnh Hành (AI Trending Token Scanner - v2.8.3)**:
+   - Tự động phát hiện các token mới có trên 100 ví Agent ID thực tương tác mua trong vòng 20 phút.
+   - Kiểm tra an toàn: Không phải token cũ (> 3 ngày), thuế mua/bán $\le 10\%$, thanh khoản $\ge 10$ BNB, vượt qua kiểm tra Honeypot.
 
-5. **Giới Hạn Chi Tiêu Mint Có Phí (Daily Paid Cap: $60 USD/ngày)**:
-   - Giám sát tổng chi phí mint trả phí hàng ngày, dừng khi chạm ngưỡng 60 USD (hoặc tương đương trong BNB/USDT), tự động reset lúc 00:00 UTC.
+5. **Bộ Nhớ Đệm Chặn Đứng Mass-Deployer (Cached Mass-Deployer Skip - v2.7.7)**:
+   - Các deployer bị phát hiện tạo $\ge 10$ contract/24h sẽ được đưa vào danh sách đen vĩnh viễn trong bộ nhớ đệm, giúp bot từ chối ngay lập tức các contract tiếp theo mà không tốn truy vấn RPC.
 
-6. **Chó Săn Rà Soát Ủy Quyền Nguy Hiểm (Approvals Watchdog)**:
-   - Quét danh sách ủy quyền (`baw approvals list`) định kỳ mỗi 10 phút.
-   - Tự động thu hồi (`baw approvals revoke`) các ủy quyền đối với các địa chỉ độc hại hoặc giao thức từng bị chiếm quyền DNS (như Flap).
+6. **Tính Đúng Tài Sản Ngân Khố (Treasury Asset Accounting - v2.7.8)**:
+   - Khi đánh giá an toàn dòng tiền của dự án, bot tính cả số dư USDT (`0x55d3...7955`) và WBNB (`0xbb4C...095c`) trong hợp đồng, tránh báo động giả với các dự án swap tiền quyên góp sang stablecoin.
 
-7. **Bộ 4 Lớp Kiểm Soát Rủi Ro Cốt Lõi (v3.3)**:
-   - **Daily spend cap (0.01 BNB/ngày gas)**: Đọc receipt on-chain thực tế, dừng khi hết quota gas.
-   - **Mass-deployer skip (≥10 deploy/24h)**: Chặn deployer spam hàng loạt.
-   - **Junk-NFT check (tokenURI)**: Loại bỏ NFT không có hình/metadata rác.
-   - **Fail limit (2 lần/contract/ngày)**: Dừng thử lại contract lỗi quá 2 lần trong ngày.
+7. **Bộ Lớp Kiểm Soát Rủi Ro Kế Thừa (v3.4 / Nancy v2.7.3 & v2.7.4)**:
+   - **Xác minh Agent ID độc quyền**: Qua bytecode & ProxyResolver (EIP-1967/Beacon/EIP-1167).
+   - **Chống lặp hình ảnh NFT**: Kiểm tra mã băm SHA-256 ảnh gốc, chặn NFT rác dùng lại ảnh cũ.
+   - **Xử lý Hybrid Paid**: Phát hiện hợp đồng có $\ge 50\%$ lượt gọi trả phí để áp trần ngân sách.
+   - **Daily spend cap (0.01 BNB gas/ngày)** & **Fail limit (2 lần/contract/ngày)**.
 
 ---
 
