@@ -23,9 +23,10 @@ def start_daemons():
     print("=" * 60, flush=True)
     
     scripts = [
-        ("Smart Sniper Daemon v3.4 (Nancy v2.7.2 Integration)", "smart_sniper_daemon.py"),
-        ("Portfolio & Price Sentinel v2.2 (ApprovalsWatchdog)", "portfolio_price_sentinel.py"),
-        ("Twitter Alpha Sentinel", "twitter_alpha_sentinel.py")
+        ("Smart Sniper Daemon v3.5 (Nancy v2.8.3 Suite)", "smart_sniper_daemon.py"),
+        ("Portfolio & Price Sentinel v2.3 (ApprovalsWatchdog & Pools)", "portfolio_price_sentinel.py"),
+        ("Twitter Alpha Sentinel", "twitter_alpha_sentinel.py"),
+        ("Telegram Alpha Sentinel (@agentidmintalerts)", "telegram_alpha_sentinel.py")
     ]
     
     managed = []
