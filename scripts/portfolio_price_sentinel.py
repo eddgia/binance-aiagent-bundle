@@ -140,24 +140,27 @@ def get_wbnb_price_usd():
         return (r0 / 1e18) / (r1 / 1e18)
 
 def check_hash21(wbnb_usd):
-    sel_claimable = get_sel("getClaimableRewards(address)")
     pad_wallet = USER_WALLET[2:].lower().rjust(64, '0')
-    res = eth_call(HASH21_POOL, sel_claimable + pad_wallet)
-    claimable_tokens = 0.0
-    if res and res != "0x":
-        claimable_tokens = int(res, 16) / 1e18
+    res_pending = eth_call(HASH21_POOL, "0xf44136a1" + pad_wallet) # pendingOf(address)
+    res_hash = eth_call(HASH21_POOL, "0x5d007281" + pad_wallet)    # hashOf(address)
+    claimable_tokens = int(res_pending, 16) / 1e18 if res_pending and res_pending != "0x" else 0.0
+    hash_power = int(res_hash, 16) / 1e18 if res_hash and res_hash != "0x" else 0.0
+
     r0, r1 = get_reserves(HASH21_PAIR)
+    price_usd = 0.0
+    liq_usd = 0.0
     if r0 > 0 and r1 > 0:
         token0 = eth_call(HASH21_PAIR, get_sel("token0()"))
-        if token0 and token0.lower().endswith(WBNB[2:].lower()):
-            price_in_bnb = (r0 / 1e18) / (r1 / 1e18)
-            liq_usd = (r0 / 1e18) * wbnb_usd * 2
+        # HASH21_PAIR is USDT / HASH
+        if token0 and token0.lower().endswith(USDT[2:].lower()):
+            price_usd = (r0 / 1e18) / (r1 / 1e18)
+            liq_usd = (r0 / 1e18) * 2
         else:
-            price_in_bnb = (r1 / 1e18) / (r0 / 1e18)
-            liq_usd = (r1 / 1e18) * wbnb_usd * 2
-        price_usd = price_in_bnb * wbnb_usd
-        val_usd = claimable_tokens * price_usd
-        log(f"[HASH21] Mined: {claimable_tokens:,.4f} HASH | Price: ${price_usd:.6f} | Liq: ${liq_usd:,.2f} | Value: ${val_usd:.4f}")
+            price_usd = (r1 / 1e18) / (r0 / 1e18)
+            liq_usd = (r1 / 1e18) * 2
+
+    val_usd = claimable_tokens * price_usd
+    log(f"[HASH21] Mining: {claimable_tokens:,.4f} HASH (Power: {hash_power:.0f} H) | Price: ${price_usd:.6f} | Liq: ${liq_usd:,.2f} | Value: ${val_usd:.4f}")
 
 def check_iao(wbnb_usd):
     pair = get_pancake_pair(IAO_TOKEN, WBNB)
